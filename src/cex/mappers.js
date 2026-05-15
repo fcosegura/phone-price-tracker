@@ -55,16 +55,27 @@ function parsePrice(value) {
   return Number.isFinite(amount) ? amount : null;
 }
 
+export function mapAlgoliaHit(hit) {
+  const gradeFromFacet = Array.isArray(hit?.Grado) ? hit.Grado[0] : hit?.Grado;
+  return mapBox({
+    ...hit,
+    grade: gradeFromFacet ?? hit?.grade,
+    cashPrice: hit?.cashPriceCalculated ?? hit?.cashPrice,
+    stockQty: hit?.ecomQuantity ?? hit?.collectionQuantity,
+    stockStatus: hit?.outOfStock?.length ? 'in stock' : hit?.availability?.[0] ?? null,
+  });
+}
+
 export function mapBox(raw) {
   const title = raw?.boxName ?? raw?.boxDescription ?? raw?.title ?? 'Producto CeX';
   const variant = parseVariantFromTitle(title);
-  const boxId = String(raw?.boxId ?? raw?.id ?? '');
+  const boxId = String(raw?.boxId ?? raw?.id ?? raw?.objectID ?? '');
 
   return {
     boxId,
     title,
     sellPrice: parsePrice(raw?.sellPrice ?? raw?.sellprice),
-    cashPrice: parsePrice(raw?.cashPrice ?? raw?.cashprice),
+    cashPrice: parsePrice(raw?.cashPrice ?? raw?.cashprice ?? raw?.cashPriceCalculated),
     imageUrl: pickImageUrl(raw),
     grade: raw?.grade ?? variant.grade,
     storageGb: variant.storageGb,
@@ -87,6 +98,19 @@ export function mapBoxesResponse(payload) {
 
 export function mapStoresFromDetail(payload) {
   const data = payload?.response?.data ?? payload?.data ?? payload;
+  const stockDetails = data?.stockDetails;
+  if (Array.isArray(stockDetails) && stockDetails.length > 0) {
+    return stockDetails.map((store) => {
+      const quantity = Number(store?.quantityOnHand ?? store?.collectionQuantity ?? 0);
+      return {
+        storeId: String(store?.storeId ?? store?.storeName ?? crypto.randomUUID()),
+        storeName: store?.storeName ?? 'Tienda CeX',
+        inStock: quantity > 0 || store?.isAvailableForCollection === 1,
+        quantity: quantity || null,
+      };
+    });
+  }
+
   const stores =
     data?.stores ??
     data?.storeAvailability ??
@@ -126,7 +150,7 @@ export function mapStoresFromDetail(payload) {
 
 export function mapBoxDetail(payload) {
   const data = payload?.response?.data ?? payload?.data ?? payload;
-  const box = data?.box ?? data?.boxes?.[0] ?? data;
+  const box = data?.boxDetails?.[0] ?? data?.box ?? data?.boxes?.[0] ?? data;
   const mapped = mapBox(box);
   const stores = mapStoresFromDetail(payload);
   return { ...mapped, stores };
