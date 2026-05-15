@@ -13,6 +13,43 @@ function formatPrice(value) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value);
 }
 
+function StoreAvailabilitySummary({ availability, compact = false }) {
+  if (!availability) {
+    return null;
+  }
+
+  const { malagaStores, hasMalagaPickup, onlineAvailable, onlineQuantity } = availability;
+
+  if (!hasMalagaPickup && !onlineAvailable) {
+    return compact ? null : <p className="muted">Sin stock conocido</p>;
+  }
+
+  return (
+    <div className={`availability-summary${compact ? ' is-compact' : ''}`}>
+      {hasMalagaPickup ? (
+        <div className="malaga-pickup">
+          <p className="availability-heading">Recogida en Málaga</p>
+          <ul className="malaga-store-list">
+            {malagaStores.map((store) => (
+              <li key={store.storeId ?? store.storeName}>
+                <strong>{store.storeName}</strong>
+                {store.quantity != null ? ` · ${store.quantity} uds.` : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {onlineAvailable ? (
+        <p className={`online-purchase${hasMalagaPickup ? ' with-malaga' : ''}`}>
+          {hasMalagaPickup ? 'También disponible: ' : ''}
+          <strong>Compra online</strong>
+          {onlineQuantity != null ? ` (${onlineQuantity} uds.)` : ''}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function formatDelta(watch) {
   if (!watch?.priceChange || watch.priceChange.delta == null) {
     return { label: 'Sin cambio reciente', className: 'neutral' };
@@ -79,13 +116,22 @@ function SearchPanel({ onSelect }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [gradeFilter, setGradeFilter] = useState('');
+  const [hideOutOfStock, setHideOutOfStock] = useState(true);
+  const [malagaOnly, setMalagaOnly] = useState(false);
 
   const filtered = useMemo(() => {
-    if (!gradeFilter) {
-      return results;
+    let list = results;
+    if (hideOutOfStock) {
+      list = list.filter((item) => item.inStock);
     }
-    return results.filter((item) => (item.grade ?? '').toUpperCase() === gradeFilter);
-  }, [results, gradeFilter]);
+    if (malagaOnly) {
+      list = list.filter((item) => item.availability?.hasMalagaPickup);
+    }
+    if (gradeFilter) {
+      list = list.filter((item) => (item.grade ?? '').toUpperCase() === gradeFilter);
+    }
+    return list;
+  }, [results, gradeFilter, hideOutOfStock, malagaOnly]);
 
   async function handleSearch(event) {
     event.preventDefault();
@@ -125,6 +171,22 @@ function SearchPanel({ onSelect }) {
       {error ? <p className="error">{error}</p> : null}
       {results.length > 0 ? (
         <div className="filters">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={hideOutOfStock}
+              onChange={(e) => setHideOutOfStock(e.target.checked)}
+            />
+            Solo con stock
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={malagaOnly}
+              onChange={(e) => setMalagaOnly(e.target.checked)}
+            />
+            Solo recogida Málaga
+          </label>
           <label>
             Grado
             <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
@@ -147,6 +209,10 @@ function SearchPanel({ onSelect }) {
             <div className="result-body">
               <h3>{item.title}</h3>
               <p className="meta">{item.variantLabel ?? 'Variante CeX'}</p>
+              <p className={`stock-badge ${item.inStock ? 'in-stock' : 'out-of-stock'}`}>
+                {item.stockStatus ?? (item.inStock ? 'Con stock' : 'Sin stock')}
+              </p>
+              <StoreAvailabilitySummary availability={item.availability} compact />
               <p className="price">{formatPrice(item.sellPrice)}</p>
               <button
                 type="button"
@@ -177,6 +243,7 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh }) {
           <h3>{watch.title}</h3>
           <p className="meta">{watch.variantLabel ?? watch.cexBoxId}</p>
           <p className="price">{formatPrice(watch.latestPrice?.sellPrice)}</p>
+          <StoreAvailabilitySummary availability={watch.availability} compact />
           <span className={`badge ${delta.className}`}>{delta.label}</span>
         </div>
       </button>
@@ -290,20 +357,26 @@ function DetailView({ watchId, onBack }) {
           </li>
         ))}
       </ul>
-      <h3>Disponibilidad en tiendas</h3>
-      {data.latestStores?.length ? (
-        <ul className="store-list">
-          {data.latestStores.map((store) => (
-            <li key={`${store.store_id}-${store.recorded_at}`}>
-              <span>{store.store_name}</span>
-              <span className={store.in_stock ? 'in-stock' : 'out-stock'}>
-                {store.in_stock ? `En stock${store.quantity != null ? ` (${store.quantity})` : ''}` : 'Sin stock'}
-              </span>
-            </li>
-          ))}
+      <h3>Disponibilidad</h3>
+      <StoreAvailabilitySummary availability={data.availabilitySummary} />
+      {data.availabilitySummary?.hasMalagaPickup ? null : data.availabilitySummary?.onlineAvailable ? (
+        <p className="muted detail-hint">
+          No hay recogida en tiendas de Málaga. Las demás ubicaciones con stock equivalen a compra online en
+          CeX.
+        </p>
+      ) : data.latestStores?.length ? (
+        <ul className="store-list muted-stores">
+          {data.latestStores
+            .filter((store) => store.in_stock)
+            .map((store) => (
+              <li key={`${store.store_id}-${store.recorded_at}`}>
+                <span>{store.store_name}</span>
+                <span className="out-stock">Sin recogida en Málaga</span>
+              </li>
+            ))}
         </ul>
       ) : (
-        <p className="muted">Sin datos de tiendas; puede mostrarse solo stock de catálogo.</p>
+        <p className="muted">Sin datos de tiendas; actualiza para refrescar stock.</p>
       )}
     </section>
   );

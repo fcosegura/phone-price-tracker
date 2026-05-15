@@ -103,8 +103,9 @@ async function handleApiRequest(request, env, url, scopeId) {
     if (query.length < 2) {
       return jsonResponse({ error: 'Introduce al menos 2 caracteres.' }, 400);
     }
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '50', 10);
     const results = await searchBoxes(query, {
-      countRecord: Number.parseInt(url.searchParams.get('limit') ?? '24', 10),
+      countRecord: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 50,
       country,
     });
     return jsonResponse({ query, results });

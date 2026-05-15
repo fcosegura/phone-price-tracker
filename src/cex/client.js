@@ -1,8 +1,15 @@
-import { mapBoxDetail, mapBoxesResponse, mapStoresFromDetail } from './mappers.js';
+import { searchAlgoliaBoxes } from './algolia.js';
+import {
+  mapAlgoliaHit,
+  mapBoxDetail,
+  mapStoresFromDetail,
+} from './mappers.js';
+import { getCexSearchConfig } from './settings.js';
+import { attachAvailabilitySummary, storesFromAlgoliaHit } from './storeAvailability.js';
 
 const DEFAULT_COUNTRY = 'es';
 const USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 export function getCexBaseUrl(country = DEFAULT_COUNTRY) {
   return `https://wss2.cex.${country}.webuy.io/v3`;
@@ -27,6 +34,13 @@ async function cexFetch(path, searchParams = {}, country = DEFAULT_COUNTRY) {
   });
 
   if (!response.ok) {
+    const blocked =
+      response.status === 403 && (response.headers.get('server') ?? '').includes('cloudflare');
+    if (blocked) {
+      throw new Error(
+        `CeX bloqueó la petición (${response.status} en ${path}). La búsqueda usa Algolia; el detalle usa /boxes/{id}/detail.`,
+      );
+    }
     throw new Error(`CeX API respondió ${response.status} para ${path}`);
   }
 
@@ -43,82 +57,137 @@ async function cexFetch(path, searchParams = {}, country = DEFAULT_COUNTRY) {
   return payload;
 }
 
-export async function searchBoxes(query, { firstRecord = 1, countRecord = 20, country } = {}) {
-  const payload = await cexFetch(
-    '/boxes',
-    {
-      q: query,
-      firstRecord,
-      countRecord,
-      sortBy: 'relevance',
-    },
-    country,
+export async function searchBoxes(query, { firstRecord = 1, countRecord = 50, country } = {}) {
+  const searchConfig = await getCexSearchConfig(country ?? DEFAULT_COUNTRY);
+  const hitsPerPage = Math.max(1, Math.min(countRecord, 50));
+  const page = Math.max(0, Math.floor((firstRecord - 1) / hitsPerPage));
+  const hits = await searchAlgoliaBoxes(query, {
+    hitsPerPage,
+    page,
+    config: searchConfig,
+  });
+  let results = hits
+    .map((hit) => {
+      const box = mapAlgoliaHit(hit);
+      const stores = storesFromAlgoliaHit(hit);
+      return attachAvailabilitySummary(box, stores, {
+        ecomQuantity: hit.ecomQuantity,
+        inStockOnline: hit.inStockOnline,
+      });
+    })
+    .filter((box) => box.boxId)
+    .sort(
+      (a, b) =>
+        Number(b.availability?.hasMalagaPickup) - Number(a.availability?.hasMalagaPickup) ||
+        Number(b.inStock) - Number(a.inStock) ||
+        (a.sellPrice ?? 0) - (b.sellPrice ?? 0),
+    );
+
+  results = await enrichInStockWithStoreStock(results, country ?? DEFAULT_COUNTRY);
+  return results.sort(
+    (a, b) =>
+      Number(b.availability?.hasMalagaPickup) - Number(a.availability?.hasMalagaPickup) ||
+      Number(b.inStock) - Number(a.inStock) ||
+      (a.sellPrice ?? 0) - (b.sellPrice ?? 0),
   );
-  return mapBoxesResponse(payload);
+}
+
+async function enrichInStockWithStoreStock(results, country) {
+  const toEnrich = results.filter((box) => box.inStock).slice(0, 12);
+  if (toEnrich.length === 0) {
+    return results;
+  }
+
+  const enriched = await Promise.all(
+    toEnrich.map(async (box) => {
+      try {
+        const payload = await cexFetch(`/boxes/${box.boxId}/stock`, {}, country);
+        const stores = mapStoresFromDetail(payload).filter((s) => s.inStock);
+        return attachAvailabilitySummary(box, stores, {
+          ecomQuantity: box.stockQuantity,
+          inStockOnline: box.inStock ? 1 : 0,
+        });
+      } catch {
+        return box;
+      }
+    }),
+  );
+
+  const byId = new Map(enriched.map((box) => [box.boxId, box]));
+  return results.map((box) => byId.get(box.boxId) ?? box);
 }
 
 export async function getBoxDetail(boxId, country) {
+  const id = String(boxId).trim();
   const attempts = [
-    () => cexFetch('/boxes/detail', { boxId, id: boxId }, country),
-    () => cexFetch(`/boxes/${boxId}`, {}, country),
-    () => cexFetch('/product/detail', { boxId }, country),
+    () => cexFetch(`/boxes/${id}/detail`, {}, country),
+    () => cexFetch('/boxes/detail', { boxId: id, id }, country),
   ];
 
   let lastError;
   for (const attempt of attempts) {
     try {
       const payload = await attempt();
-      return mapBoxDetail(payload);
+      const mapped = mapBoxDetail(payload);
+      if (mapped.boxId) {
+        return mapped;
+      }
     } catch (error) {
       lastError = error;
     }
   }
 
-  const searchResults = await searchBoxes(boxId, { countRecord: 5, country });
-  const match = searchResults.find((item) => item.boxId === String(boxId));
+  const searchResults = await searchBoxes(id, { countRecord: 5, country });
+  const match = searchResults.find((item) => item.boxId.toUpperCase() === id.toUpperCase());
   if (match) {
-    return { ...match, stores: [] };
+    return match;
   }
 
-  throw lastError ?? new Error(`No se encontró el producto ${boxId}`);
+  throw lastError ?? new Error(`No se encontró el producto ${id}`);
 }
 
 export async function getBoxWithAvailability(boxId, country) {
   const detail = await getBoxDetail(boxId, country);
+  const id = String(boxId).trim();
 
-  const availabilityAttempts = [
-    () => cexFetch('/productAvailability', { boxId, boxIds: boxId }, country),
-    () => cexFetch('/boxes/availability', { boxId }, country),
+  const stockAttempts = [
+    () => cexFetch(`/boxes/${id}/stock`, {}, country),
+    () => cexFetch('/productAvailability', { boxId: id, boxIds: id }, country),
+    () => cexFetch('/boxes/availability', { boxId: id }, country),
   ];
 
-  for (const attempt of availabilityAttempts) {
+  for (const attempt of stockAttempts) {
     try {
       const payload = await attempt();
       const stores = mapStoresFromDetail(payload);
       if (stores.length > 0) {
-        return { ...detail, stores };
+        return attachAvailabilitySummary(detail, stores, {
+          ecomQuantity: detail.stockQuantity,
+          inStockOnline: detail.inStock ? 1 : 0,
+        });
       }
     } catch {
       // try next endpoint
     }
   }
 
-  if (detail.stockQuantity != null || detail.stockStatus) {
-    const inStock =
-      detail.stockStatus?.toLowerCase?.().includes('stock') &&
-      !detail.stockStatus?.toLowerCase?.().includes('out');
-    return {
-      ...detail,
-      stores: [
+  if (detail.inStock || detail.stockQuantity != null) {
+    return attachAvailabilitySummary(
+      detail,
+      [
         {
-          storeId: 'catalog',
-          storeName: 'Catálogo CeX',
-          inStock: inStock ?? Number(detail.stockQuantity) > 0,
+          storeId: 'online',
+          storeName: 'CeX online',
+          inStock: detail.inStock ?? Number(detail.stockQuantity) > 0,
           quantity: detail.stockQuantity ?? null,
         },
       ],
-    };
+      { ecomQuantity: detail.stockQuantity, inStockOnline: 1 },
+    );
   }
 
-  return detail;
+  return attachAvailabilitySummary(detail, [], {
+    ecomQuantity: detail.stockQuantity,
+    inStockOnline: 0,
+  });
 }
