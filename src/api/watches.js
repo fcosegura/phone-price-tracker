@@ -1,4 +1,5 @@
 import { getBoxWithAvailability } from '../cex/client.js';
+import { summarizeAvailability } from '../cex/storeAvailability.js';
 
 const MAX_HISTORY = 90;
 
@@ -34,6 +35,45 @@ function rowToWatch(row) {
   };
 }
 
+async function getLatestAvailabilityMap(env, deviceIds) {
+  const map = new Map();
+  if (deviceIds.length === 0) {
+    return map;
+  }
+
+  const rows = await env.DB.prepare(
+    `SELECT a.device_id, a.store_id, a.store_name, a.in_stock, a.quantity
+     FROM availability_snapshots a
+     INNER JOIN (
+       SELECT device_id, MAX(recorded_at) AS recorded_at
+       FROM availability_snapshots
+       GROUP BY device_id
+     ) latest ON a.device_id = latest.device_id AND a.recorded_at = latest.recorded_at
+     WHERE a.in_stock = 1`,
+  ).all();
+
+  for (const row of rows.results ?? []) {
+    if (!deviceIds.includes(row.device_id)) {
+      continue;
+    }
+    const stores = map.get(row.device_id) ?? [];
+    stores.push({
+      storeId: row.store_id,
+      storeName: row.store_name,
+      inStock: true,
+      quantity: row.quantity,
+    });
+    map.set(row.device_id, stores);
+  }
+
+  for (const id of deviceIds) {
+    const stores = map.get(id) ?? [];
+    map.set(id, summarizeAvailability(stores));
+  }
+
+  return map;
+}
+
 export async function listWatches(env, scopeId) {
   const result = await env.DB.prepare(
     `SELECT d.*,
@@ -47,7 +87,15 @@ export async function listWatches(env, scopeId) {
     .bind(scopeId)
     .all();
 
-  return (result.results ?? []).map(rowToWatch);
+  const watches = (result.results ?? []).map(rowToWatch);
+  const availabilityMap = await getLatestAvailabilityMap(
+    env,
+    watches.map((watch) => watch.id),
+  );
+  return watches.map((watch) => ({
+    ...watch,
+    availability: availabilityMap.get(watch.id) ?? null,
+  }));
 }
 
 export async function getWatch(env, scopeId, deviceId) {
@@ -122,7 +170,8 @@ export async function createWatch(env, scopeId, body, maxWatches) {
 
   await recordSnapshots(env, id, live);
 
-  return getWatch(env, scopeId, id);
+  const watch = await getWatch(env, scopeId, id);
+  return { ...watch, availability: live.availability ?? null };
 }
 
 export async function deleteWatch(env, scopeId, deviceId) {
@@ -224,7 +273,11 @@ export async function refreshWatch(env, scopeId, deviceId, country) {
   }
   const live = await getBoxWithAvailability(watch.cexBoxId, country);
   await recordSnapshots(env, deviceId, live);
-  return { watch: await getWatch(env, scopeId, deviceId), live };
+  const updated = await getWatch(env, scopeId, deviceId);
+  return {
+    watch: { ...updated, availability: live.availability ?? null },
+    live,
+  };
 }
 
 export async function getWatchHistory(env, scopeId, deviceId) {
@@ -259,11 +312,20 @@ export async function getWatchHistory(env, scopeId, deviceId) {
     .bind(deviceId)
     .all();
 
+  const storeRows = latestStores.results ?? [];
+  const stores = storeRows.map((row) => ({
+    storeId: row.store_id,
+    storeName: row.store_name,
+    inStock: Boolean(row.in_stock),
+    quantity: row.quantity,
+  }));
+
   return {
     watch,
     prices: (prices.results ?? []).reverse(),
     availability: availability.results ?? [],
-    latestStores: latestStores.results ?? [],
+    latestStores: storeRows,
+    availabilitySummary: summarizeAvailability(stores.filter((s) => s.inStock)),
   };
 }
 

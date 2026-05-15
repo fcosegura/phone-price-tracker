@@ -131,6 +131,75 @@ select {
   color: var(--muted);
 }
 
+.availability-summary {
+  margin: 8px 0;
+}
+
+.availability-summary.is-compact {
+  margin: 6px 0;
+}
+
+.malaga-pickup {
+  background: linear-gradient(135deg, rgba(255, 196, 0, 0.22), rgba(255, 140, 0, 0.12));
+  border: 2px solid #e6a800;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.availability-heading {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9a6700;
+}
+
+.malaga-store-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.malaga-store-list li {
+  font-size: 0.88rem;
+  padding: 4px 0;
+  color: var(--text);
+}
+
+.malaga-store-list strong {
+  color: #7a5200;
+}
+
+.online-purchase {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.online-purchase.with-malaga {
+  padding-left: 2px;
+}
+
+.online-purchase strong {
+  color: var(--text);
+}
+
+.detail-hint {
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+
+.result-card:has(.malaga-pickup) {
+  border-color: #e6a800;
+  box-shadow: 0 0 0 1px rgba(230, 168, 0, 0.35);
+}
+
+.watch-card:has(.malaga-pickup) {
+  border-color: #e6a800;
+}
+
 .filters select {
   min-height: 44px;
   border-radius: 10px;

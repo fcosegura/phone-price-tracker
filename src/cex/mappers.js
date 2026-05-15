@@ -100,7 +100,7 @@ function deriveStockLabel(raw, inStock) {
 export function mapAlgoliaHit(hit) {
   const gradeFromFacet = Array.isArray(hit?.Grado) ? hit.Grado[0] : hit?.Grado;
   const inStock = deriveInStock(hit);
-  return mapBox({
+  const box = mapBox({
     ...hit,
     grade: gradeFromFacet ?? hit?.grade,
     cashPrice: hit?.cashPriceCalculated ?? hit?.cashPrice,
@@ -108,6 +108,7 @@ export function mapAlgoliaHit(hit) {
     stockStatus: deriveStockLabel(hit, inStock),
     inStock,
   });
+  return box;
 }
 
 export function mapBox(raw) {
