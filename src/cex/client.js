@@ -56,7 +56,7 @@ async function cexFetch(path, searchParams = {}, country = DEFAULT_COUNTRY) {
   return payload;
 }
 
-export async function searchBoxes(query, { firstRecord = 1, countRecord = 20, country } = {}) {
+export async function searchBoxes(query, { firstRecord = 1, countRecord = 50, country } = {}) {
   const searchConfig = await getCexSearchConfig(country ?? DEFAULT_COUNTRY);
   const hitsPerPage = Math.max(1, Math.min(countRecord, 50));
   const page = Math.max(0, Math.floor((firstRecord - 1) / hitsPerPage));

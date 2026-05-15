@@ -6,7 +6,7 @@ function buildAlgoliaUrl(config) {
   return `${base}/1/indexes/${encodeURIComponent(config.indexName)}/query`;
 }
 
-export async function searchAlgoliaBoxes(query, { hitsPerPage = 20, page = 0, config }) {
+export async function searchAlgoliaBoxes(query, { hitsPerPage = 50, page = 0, config }) {
   const params = new URLSearchParams({
     query: String(query).trim(),
     hitsPerPage: String(hitsPerPage),
