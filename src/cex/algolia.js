@@ -1,19 +1,38 @@
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
-function buildAlgoliaUrl(config) {
+function buildAlgoliaUrl(config, indexName = config.indexName) {
   const base = config.useProxy ? config.proxyUrl : `https://${config.appId}-dsn.algolia.net`;
-  return `${base}/1/indexes/${encodeURIComponent(config.indexName)}/query`;
+  return `${base}/1/indexes/${encodeURIComponent(indexName)}/query`;
 }
 
-export async function searchAlgoliaBoxes(query, { hitsPerPage = 50, page = 0, config }) {
+export async function queryAlgoliaIndex(
+  query,
+  {
+    hitsPerPage = 50,
+    page = 0,
+    config,
+    indexName = config.indexName,
+    facetFilters,
+    filters,
+  },
+) {
   const params = new URLSearchParams({
     query: String(query).trim(),
     hitsPerPage: String(hitsPerPage),
     page: String(page),
   });
+  if (facetFilters) {
+    params.set(
+      'facetFilters',
+      Array.isArray(facetFilters) ? JSON.stringify(facetFilters) : String(facetFilters),
+    );
+  }
+  if (filters) {
+    params.set('filters', String(filters));
+  }
 
-  const url = buildAlgoliaUrl(config);
+  const url = buildAlgoliaUrl(config, indexName);
   const headers = {
     accept: 'application/json',
     'content-type': 'application/json',
@@ -38,6 +57,10 @@ export async function searchAlgoliaBoxes(query, { hitsPerPage = 50, page = 0, co
     throw new Error(`Búsqueda CeX (Algolia) respondió ${response.status}`);
   }
 
-  const payload = await response.json();
+  return response.json();
+}
+
+export async function searchAlgoliaBoxes(query, options) {
+  const payload = await queryAlgoliaIndex(query, options);
   return Array.isArray(payload?.hits) ? payload.hits : [];
 }

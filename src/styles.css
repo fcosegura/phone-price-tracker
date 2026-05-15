@@ -209,6 +209,12 @@ select {
   padding: 0 10px;
 }
 
+.result-summary {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .btn {
   min-height: 44px;
   border-radius: 12px;

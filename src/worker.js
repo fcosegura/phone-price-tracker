@@ -104,12 +104,19 @@ async function handleApiRequest(request, env, url, scopeId) {
     if (query.length < 2) {
       return jsonResponse({ error: 'Introduce al menos 2 caracteres.' }, 400);
     }
-    const limit = Number.parseInt(url.searchParams.get('limit') ?? '50', 10);
-    const results = await searchBoxes(query, {
-      countRecord: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 50,
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '250', 10);
+    const sort = url.searchParams.get('sort') ?? 'relevance';
+    const inStockOnly = ['1', 'true', 'yes'].includes(
+      (url.searchParams.get('inStockOnly') ?? '').toLowerCase(),
+    );
+    const search = await searchBoxes(query, {
+      countRecord: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 500) : 250,
       country,
+      sortBy: ['price-asc', 'price-desc', 'relevance'].includes(sort) ? sort : 'relevance',
+      inStockOnly,
+      includeMeta: true,
     });
-    return jsonResponse({ query, results });
+    return jsonResponse({ query, ...search });
   }
 
   if (url.pathname === '/api/cex/image' && request.method === 'GET') {

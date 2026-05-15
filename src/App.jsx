@@ -5,6 +5,7 @@ const VIEWS = {
   WATCHES: 'watches',
   DETAIL: 'detail',
 };
+const SEARCH_RESULT_LIMIT = 250;
 
 function formatPrice(value) {
   if (value == null || Number.isNaN(value)) {
@@ -168,7 +169,9 @@ function sortSearchResults(list, sortBy) {
 
 function SearchPanel({ onSelect }) {
   const [query, setQuery] = useState('');
+  const [lastQuery, setLastQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [searchMeta, setSearchMeta] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [gradeFilter, setGradeFilter] = useState('');
@@ -190,6 +193,38 @@ function SearchPanel({ onSelect }) {
     return sortSearchResults(list, sortBy);
   }, [results, gradeFilter, hideOutOfStock, malagaOnly, sortBy]);
 
+  async function runSearch(q, options = {}) {
+    const stockOnly = options.hideOutOfStock ?? hideOutOfStock;
+    const searchSort = options.sortBy ?? sortBy;
+    const params = new URLSearchParams({
+      q,
+      limit: String(SEARCH_RESULT_LIMIT),
+      sort: searchSort,
+    });
+    if (stockOnly) {
+      params.set('inStockOnly', '1');
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const payload = await api(`/api/cex/search?${params.toString()}`);
+      setResults(payload.results ?? []);
+      setSearchMeta({
+        total: payload.total ?? payload.results?.length ?? 0,
+        returned: payload.returned ?? payload.results?.length ?? 0,
+        truncated: Boolean(payload.truncated),
+        limit: payload.limit ?? SEARCH_RESULT_LIMIT,
+      });
+    } catch (searchError) {
+      setError(searchError.message);
+      setResults([]);
+      setSearchMeta(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSearch(event) {
     event.preventDefault();
     const q = query.trim();
@@ -197,16 +232,23 @@ function SearchPanel({ onSelect }) {
       setError('Introduce al menos 2 caracteres.');
       return;
     }
-    setLoading(true);
-    setError('');
-    try {
-      const payload = await api(`/api/cex/search?q=${encodeURIComponent(q)}`);
-      setResults(payload.results ?? []);
-    } catch (searchError) {
-      setError(searchError.message);
-      setResults([]);
-    } finally {
-      setLoading(false);
+    setLastQuery(q);
+    await runSearch(q);
+  }
+
+  function handleStockFilterChange(event) {
+    const checked = event.target.checked;
+    setHideOutOfStock(checked);
+    if (lastQuery) {
+      runSearch(lastQuery, { hideOutOfStock: checked });
+    }
+  }
+
+  function handleSortChange(event) {
+    const value = event.target.value;
+    setSortBy(value);
+    if (lastQuery) {
+      runSearch(lastQuery, { sortBy: value });
     }
   }
 
@@ -232,7 +274,7 @@ function SearchPanel({ onSelect }) {
             <input
               type="checkbox"
               checked={hideOutOfStock}
-              onChange={(e) => setHideOutOfStock(e.target.checked)}
+              onChange={handleStockFilterChange}
             />
             Solo con stock
           </label>
@@ -255,13 +297,19 @@ function SearchPanel({ onSelect }) {
           </label>
           <label>
             Ordenar
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <select value={sortBy} onChange={handleSortChange}>
               <option value="price-desc">Precio: mayor a menor</option>
               <option value="price-asc">Precio: menor a mayor</option>
               <option value="relevance">Relevancia / stock</option>
             </select>
           </label>
         </div>
+      ) : null}
+      {searchMeta ? (
+        <p className="result-summary">
+          Mostrando {filtered.length} de {searchMeta.total} resultados
+          {searchMeta.truncated ? ` (límite ${searchMeta.limit})` : ''}
+        </p>
       ) : null}
       <ul className="result-list">
         {filtered.map((item) => (
