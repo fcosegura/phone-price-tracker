@@ -10,6 +10,7 @@ export const TABLE_BOOTSTRAP_STATEMENTS = [
     storage_gb INTEGER,
     color TEXT,
     variant_label TEXT,
+    retailer TEXT NOT NULL DEFAULT 'cex',
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -37,7 +38,21 @@ export const TABLE_BOOTSTRAP_STATEMENTS = [
   'CREATE INDEX IF NOT EXISTS idx_availability_device_time ON availability_snapshots(device_id, recorded_at DESC)',
 ];
 
+const MIGRATION_STATEMENTS = [
+  "ALTER TABLE tracked_devices ADD COLUMN retailer TEXT NOT NULL DEFAULT 'cex'",
+  'CREATE INDEX IF NOT EXISTS idx_tracked_devices_retailer ON tracked_devices(scope_id, retailer, is_active)',
+];
+
 let schemaReadyPromise;
+
+async function runMigrations(env) {
+  const columns = await env.DB.prepare('PRAGMA table_info(tracked_devices)').all();
+  const names = new Set((columns.results ?? []).map((column) => column.name));
+  if (!names.has('retailer')) {
+    await env.DB.prepare(MIGRATION_STATEMENTS[0]).run();
+  }
+  await env.DB.prepare(MIGRATION_STATEMENTS[1]).run();
+}
 
 export function ensureSchema(env) {
   if (!env?.DB) {
@@ -48,6 +63,7 @@ export function ensureSchema(env) {
       for (const statement of TABLE_BOOTSTRAP_STATEMENTS) {
         await env.DB.prepare(statement).run();
       }
+      await runMigrations(env);
     })();
   }
   return schemaReadyPromise;

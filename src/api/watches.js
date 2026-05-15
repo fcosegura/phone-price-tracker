@@ -1,6 +1,10 @@
 import { getBoxDetail, getBoxWithAvailability } from '../cex/client.js';
 import { normalizeImageUrl } from '../cex/mappers.js';
 import { summarizeAvailability } from '../cex/storeAvailability.js';
+import { getProductWithAvailability } from '../cashconverters/client.js';
+import { normalizeCcImageUrl } from '../cashconverters/mappers.js';
+
+const RETAILERS = new Set(['cex', 'cc']);
 
 const MAX_HISTORY = 90;
 
@@ -12,7 +16,9 @@ function rowToWatch(row) {
     id: row.id,
     scopeId: row.scope_id,
     searchQuery: row.search_query,
+    retailer: row.retailer ?? 'cex',
     cexBoxId: row.cex_box_id,
+    productId: row.cex_box_id,
     title: row.title,
     imageUrl: normalizeImageUrl(row.image_url),
     grade: row.grade,
@@ -67,16 +73,25 @@ async function getLatestAvailabilityMap(env, deviceIds) {
     map.set(row.device_id, stores);
   }
 
-  for (const id of deviceIds) {
-    const stores = map.get(id) ?? [];
-    map.set(id, summarizeAvailability(stores));
-  }
-
   return map;
 }
 
-async function persistWatchImage(env, deviceId, imageUrl) {
-  const normalized = normalizeImageUrl(imageUrl);
+function availabilityForWatch(row, stores) {
+  const retailer = row?.retailer ?? 'cex';
+  if (retailer === 'cc') {
+    const store = stores[0];
+    return {
+      storeName: store?.storeName ?? null,
+      inStock: stores.some((s) => s.inStock),
+      isUniqueItem: true,
+    };
+  }
+  return summarizeAvailability(stores);
+}
+
+async function persistWatchImage(env, deviceId, imageUrl, retailer = 'cex') {
+  const normalized =
+    retailer === 'cc' ? normalizeCcImageUrl(imageUrl) : normalizeImageUrl(imageUrl);
   if (!normalized) {
     return null;
   }
@@ -92,36 +107,65 @@ async function backfillWatchImage(env, watch, country) {
     return watch;
   }
   try {
-    const detail = await getBoxDetail(watch.cexBoxId, country);
-    const imageUrl = await persistWatchImage(env, watch.id, detail.imageUrl);
+    const live =
+      watch.retailer === 'cc'
+        ? await getProductWithAvailability(watch.cexBoxId)
+        : await getBoxDetail(watch.cexBoxId, country);
+    const imageUrl = await persistWatchImage(env, watch.id, live.imageUrl, watch.retailer);
     return imageUrl ? { ...watch, imageUrl } : watch;
   } catch {
     return watch;
   }
 }
 
-export async function listWatches(env, scopeId) {
-  const country = env.CEX_COUNTRY ?? 'es';
-  const result = await env.DB.prepare(
-    `SELECT d.*,
-      (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_sell_price,
-      (SELECT recorded_at FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_price_at,
-      (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1 OFFSET 1) AS prev_sell_price
-    FROM tracked_devices d
-    WHERE d.scope_id = ?1 AND d.is_active = 1
-    ORDER BY d.updated_at DESC`,
-  )
-    .bind(scopeId)
-    .all();
+function normalizeRetailer(value) {
+  const retailer = String(value ?? 'cex').toLowerCase();
+  return RETAILERS.has(retailer) ? retailer : 'cex';
+}
 
-  const watches = (result.results ?? []).map(rowToWatch);
-  const availabilityMap = await getLatestAvailabilityMap(
+async function fetchLiveProduct(retailer, productId, country) {
+  if (retailer === 'cc') {
+    return getProductWithAvailability(productId);
+  }
+  return getBoxWithAvailability(productId, country);
+}
+
+export async function listWatches(env, scopeId, retailerFilter = null) {
+  const country = env.CEX_COUNTRY ?? 'es';
+  const retailer = retailerFilter ? normalizeRetailer(retailerFilter) : null;
+  const result = retailer
+    ? await env.DB.prepare(
+        `SELECT d.*,
+          (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_sell_price,
+          (SELECT recorded_at FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_price_at,
+          (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1 OFFSET 1) AS prev_sell_price
+        FROM tracked_devices d
+        WHERE d.scope_id = ?1 AND d.is_active = 1 AND d.retailer = ?2
+        ORDER BY d.updated_at DESC`,
+      )
+        .bind(scopeId, retailer)
+        .all()
+    : await env.DB.prepare(
+        `SELECT d.*,
+          (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_sell_price,
+          (SELECT recorded_at FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_price_at,
+          (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1 OFFSET 1) AS prev_sell_price
+        FROM tracked_devices d
+        WHERE d.scope_id = ?1 AND d.is_active = 1
+        ORDER BY d.updated_at DESC`,
+      )
+        .bind(scopeId)
+        .all();
+
+  const rows = result.results ?? [];
+  const watches = rows.map(rowToWatch);
+  const storeMap = await getLatestAvailabilityMap(
     env,
     watches.map((watch) => watch.id),
   );
-  const withAvailability = watches.map((watch) => ({
+  const withAvailability = watches.map((watch, index) => ({
     ...watch,
-    availability: availabilityMap.get(watch.id) ?? null,
+    availability: availabilityForWatch(rows[index], storeMap.get(watch.id) ?? []),
   }));
 
   const needsImage = withAvailability.filter((watch) => !watch.imageUrl);
@@ -145,63 +189,79 @@ export async function getWatch(env, scopeId, deviceId) {
   return rowToWatch(row);
 }
 
-export async function countWatches(env, scopeId) {
-  const row = await env.DB.prepare(
-    'SELECT COUNT(*) AS total FROM tracked_devices WHERE scope_id = ?1 AND is_active = 1',
-  )
-    .bind(scopeId)
-    .first();
+export async function countWatches(env, scopeId, retailerFilter = null) {
+  const retailer = retailerFilter ? normalizeRetailer(retailerFilter) : null;
+  const row = retailer
+    ? await env.DB.prepare(
+        'SELECT COUNT(*) AS total FROM tracked_devices WHERE scope_id = ?1 AND is_active = 1 AND retailer = ?2',
+      )
+        .bind(scopeId, retailer)
+        .first()
+    : await env.DB.prepare(
+        'SELECT COUNT(*) AS total FROM tracked_devices WHERE scope_id = ?1 AND is_active = 1',
+      )
+        .bind(scopeId)
+        .first();
   return Number(row?.total ?? 0);
 }
 
 export async function createWatch(env, scopeId, body, maxWatches) {
-  const total = await countWatches(env, scopeId);
+  const retailer = normalizeRetailer(body.retailer);
+  const total = await countWatches(env, scopeId, retailer);
   if (total >= maxWatches) {
-    const error = new Error(`Máximo ${maxWatches} dispositivos en seguimiento.`);
+    const error = new Error(`Máximo ${maxWatches} dispositivos en seguimiento (${retailer}).`);
     error.status = 400;
     throw error;
   }
 
-  const boxId = String(body.cexBoxId ?? body.boxId ?? '').trim();
-  if (!boxId) {
-    const error = new Error('cexBoxId es obligatorio.');
+  const productId = String(
+    body.productId ?? body.cexBoxId ?? body.boxId ?? '',
+  ).trim();
+  if (!productId) {
+    const error = new Error('productId es obligatorio.');
     error.status = 400;
     throw error;
   }
 
   const existing = await env.DB.prepare(
-    'SELECT id FROM tracked_devices WHERE scope_id = ?1 AND cex_box_id = ?2 AND is_active = 1',
+    'SELECT id FROM tracked_devices WHERE scope_id = ?1 AND cex_box_id = ?2 AND retailer = ?3 AND is_active = 1',
   )
-    .bind(scopeId, boxId)
+    .bind(scopeId, productId, retailer)
     .first();
 
   if (existing) {
-    const error = new Error('Este listado CeX ya está en seguimiento.');
+    const error = new Error(
+      retailer === 'cc'
+        ? 'Este artículo de Cash Converters ya está en seguimiento.'
+        : 'Este listado CeX ya está en seguimiento.',
+    );
     error.status = 409;
     throw error;
   }
 
-  const live = await getBoxWithAvailability(boxId, env.CEX_COUNTRY);
+  const live = await fetchLiveProduct(retailer, productId, env.CEX_COUNTRY ?? 'es');
+  const imageNormalizer = retailer === 'cc' ? normalizeCcImageUrl : normalizeImageUrl;
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
   await env.DB.prepare(
     `INSERT INTO tracked_devices (
       id, scope_id, search_query, cex_box_id, title, image_url, grade,
-      storage_gb, color, variant_label, is_active, created_at, updated_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)`,
+      storage_gb, color, variant_label, retailer, is_active, created_at, updated_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1, ?12, ?12)`,
   )
     .bind(
       id,
       scopeId,
       String(body.searchQuery ?? '').trim() || live.title,
-      boxId,
+      productId,
       body.title ?? live.title,
-      normalizeImageUrl(body.imageUrl ?? live.imageUrl),
+      imageNormalizer(body.imageUrl ?? live.imageUrl),
       body.grade ?? live.grade,
       body.storageGb ?? live.storageGb,
       body.color ?? live.color,
       body.variantLabel ?? live.variantLabel,
+      retailer,
       now,
     )
     .run();
@@ -309,9 +369,15 @@ export async function refreshWatch(env, scopeId, deviceId, country) {
   if (!watch) {
     return null;
   }
-  const live = await getBoxWithAvailability(watch.cexBoxId, country);
+  const live = await fetchLiveProduct(watch.retailer ?? 'cex', watch.cexBoxId, country);
   await recordSnapshots(env, deviceId, live);
-  await persistWatchImage(env, deviceId, live.imageUrl);
+  const imageUrl =
+    watch.retailer === 'cc'
+      ? normalizeCcImageUrl(live.imageUrl)
+      : normalizeImageUrl(live.imageUrl);
+  if (imageUrl) {
+    await persistWatchImage(env, deviceId, imageUrl, watch.retailer ?? 'cex');
+  }
   const updated = await getWatch(env, scopeId, deviceId);
   return {
     watch: { ...updated, availability: live.availability ?? null },
@@ -359,25 +425,35 @@ export async function getWatchHistory(env, scopeId, deviceId) {
     quantity: row.quantity,
   }));
 
+  const availabilitySummary =
+    watch.retailer === 'cc'
+      ? {
+          storeName: stores.find((s) => s.inStock)?.storeName ?? null,
+          inStock: stores.some((s) => s.inStock),
+          isUniqueItem: true,
+        }
+      : summarizeAvailability(stores.filter((s) => s.inStock));
+
   return {
     watch,
     prices: (prices.results ?? []).reverse(),
     availability: availability.results ?? [],
     latestStores: storeRows,
-    availabilitySummary: summarizeAvailability(stores.filter((s) => s.inStock)),
+    availabilitySummary,
   };
 }
 
 export async function pollAllActiveWatches(env, country) {
   const devices = await env.DB.prepare(
-    'SELECT id, cex_box_id FROM tracked_devices WHERE is_active = 1',
+    'SELECT id, cex_box_id, retailer FROM tracked_devices WHERE is_active = 1',
   ).all();
 
   const summary = { total: 0, updated: 0, errors: [] };
   for (const device of devices.results ?? []) {
     summary.total += 1;
     try {
-      const live = await getBoxWithAvailability(device.cex_box_id, country);
+      const retailer = device.retailer ?? 'cex';
+      const live = await fetchLiveProduct(retailer, device.cex_box_id, country);
       const result = await recordSnapshots(env, device.id, live);
       if (result.priceChanged || result.storeCount > 0) {
         summary.updated += 1;

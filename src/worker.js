@@ -1,5 +1,7 @@
 import { getBoxWithAvailability, searchBoxes } from './cex/client.js';
 import { handleCexImageRequest } from './cex/imageProxy.js';
+import { getProductWithAvailability, searchProducts } from './cashconverters/client.js';
+import { handleCcImageRequest } from './cashconverters/imageProxy.js';
 import {
   createWatch,
   deleteWatch,
@@ -125,8 +127,42 @@ async function handleApiRequest(request, env, url, scopeId) {
     return jsonResponse({ product });
   }
 
+  if (url.pathname === '/api/cc/search' && request.method === 'GET') {
+    const query = (url.searchParams.get('q') ?? '').trim();
+    if (query.length < 2) {
+      return jsonResponse({ error: 'Introduce al menos 2 caracteres.' }, 400);
+    }
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '24', 10);
+    const start = Number.parseInt(url.searchParams.get('start') ?? '0', 10);
+    const includeAlternates = url.searchParams.get('alternates') !== '0';
+    const storeFilter = url.searchParams.get('store') === 'malaga' ? 'malaga' : null;
+    const mobileOnly = url.searchParams.get('mobileOnly') !== '0';
+    const payload = await searchProducts(query, {
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 24,
+      start: Number.isFinite(start) ? Math.max(0, start) : 0,
+      includeAlternates,
+      storeFilter,
+      mobileOnly,
+    });
+    return jsonResponse({ query, ...payload });
+  }
+
+  if (url.pathname === '/api/cc/image' && request.method === 'GET') {
+    return handleCcImageRequest(url);
+  }
+
+  if (url.pathname === '/api/cc/product' && request.method === 'GET') {
+    const productId = url.searchParams.get('productId') ?? url.searchParams.get('pid');
+    if (!productId) {
+      return jsonResponse({ error: 'productId requerido.' }, 400);
+    }
+    const product = await getProductWithAvailability(productId);
+    return jsonResponse({ product });
+  }
+
   if (url.pathname === '/api/watches' && request.method === 'GET') {
-    const watches = await listWatches(env, scopeId);
+    const retailer = url.searchParams.get('retailer');
+    const watches = await listWatches(env, scopeId, retailer);
     return jsonResponse({ watches });
   }
 
