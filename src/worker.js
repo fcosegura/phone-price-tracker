@@ -133,10 +133,14 @@ async function handleApiRequest(request, env, url, scopeId) {
       return jsonResponse({ error: 'Introduce al menos 2 caracteres.' }, 400);
     }
     const limit = Number.parseInt(url.searchParams.get('limit') ?? '24', 10);
-    const results = await searchProducts(query, {
+    const start = Number.parseInt(url.searchParams.get('start') ?? '0', 10);
+    const includeAlternates = url.searchParams.get('alternates') !== '0';
+    const payload = await searchProducts(query, {
       limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 24,
+      start: Number.isFinite(start) ? Math.max(0, start) : 0,
+      includeAlternates,
     });
-    return jsonResponse({ query, results });
+    return jsonResponse({ query, ...payload });
   }
 
   if (url.pathname === '/api/cc/image' && request.method === 'GET') {

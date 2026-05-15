@@ -81,6 +81,29 @@ select {
   border-color: color-mix(in srgb, #f59e0b 35%, var(--surface-2));
 }
 
+.search-scope,
+.search-hint {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.load-more {
+  margin-top: 8px;
+}
+
+.alternate-results {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--surface-2);
+}
+
+.alternate-heading {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .header h1 {
   margin: 0;
   font-size: 1.5rem;

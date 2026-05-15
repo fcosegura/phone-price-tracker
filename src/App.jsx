@@ -300,10 +300,42 @@ function SearchPanel({ onSelect }) {
   );
 }
 
+function CcResultList({ items, onSelect, searchQuery }) {
+  return (
+    <ul className="result-list">
+      {items.map((item) => (
+        <li key={item.productId} className="result-card cc-card">
+          <ProductThumb key={item.productId} imageUrl={item.imageUrl} retailer={RETAILERS.CC} size={72} />
+          <div className="result-body">
+            <h3>{item.title}</h3>
+            <p className="meta">{item.variantLabel ?? 'Cash Converters'}</p>
+            <p className={`stock-badge ${item.inStock ? 'in-stock' : 'out-of-stock'}`}>
+              {item.stockStatus ?? (item.inStock ? 'Disponible' : 'No disponible')}
+            </p>
+            <CcStoreSummary availability={item.availability} compact />
+            <p className="price">{formatPrice(item.sellPrice)}</p>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => onSelect(item, searchQuery)}
+            >
+              Vigilar este artículo
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function CcSearchPanel({ onSelect }) {
-  const [query, setQuery] = useState('Galaxy Z fold 7');
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [alternates, setAlternates] = useState([]);
+  const [relatedQueriesTried, setRelatedQueriesTried] = useState([]);
+  const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [gradeFilter, setGradeFilter] = useState('');
   const [hideUnavailable, setHideUnavailable] = useState(true);
@@ -320,8 +352,40 @@ function CcSearchPanel({ onSelect }) {
     return sortSearchResults(list, sortBy);
   }, [results, gradeFilter, hideUnavailable, sortBy]);
 
+  async function runSearch({ q, start = 0, append = false }) {
+    const params = new URLSearchParams({
+      q,
+      start: String(start),
+      limit: '24',
+    });
+    if (append) {
+      params.set('alternates', '0');
+    }
+    const payload = await api(`/api/cc/search?${params}`);
+    const nextResults = payload.results ?? [];
+    if (append) {
+      setResults((prev) => {
+        const seen = new Set(prev.map((item) => item.productId));
+        const merged = [...prev];
+        for (const item of nextResults) {
+          if (!seen.has(item.productId)) {
+            seen.add(item.productId);
+            merged.push(item);
+          }
+        }
+        return merged;
+      });
+    } else {
+      setResults(nextResults);
+      setAlternates(payload.alternates ?? []);
+      setRelatedQueriesTried(payload.relatedQueriesTried ?? []);
+    }
+    setPagination(payload.pagination ?? null);
+    return payload;
+  }
+
   async function handleSearch(event) {
-    event.preventDefault();
+    event?.preventDefault();
     const q = query.trim();
     if (q.length < 2) {
       setError('Introduce al menos 2 caracteres.');
@@ -330,13 +394,31 @@ function CcSearchPanel({ onSelect }) {
     setLoading(true);
     setError('');
     try {
-      const payload = await api(`/api/cc/search?q=${encodeURIComponent(q)}`);
-      setResults(payload.results ?? []);
+      await runSearch({ q, start: 0, append: false });
     } catch (searchError) {
       setError(searchError.message);
       setResults([]);
+      setAlternates([]);
+      setRelatedQueriesTried([]);
+      setPagination(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLoadMore() {
+    if (!pagination?.nextStart) {
+      return;
+    }
+    const q = query.trim();
+    setLoadingMore(true);
+    setError('');
+    try {
+      await runSearch({ q, start: pagination.nextStart, append: true });
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -356,6 +438,13 @@ function CcSearchPanel({ onSelect }) {
         </button>
       </form>
       {error ? <p className="error">{error}</p> : null}
+      <p className="muted search-scope">Búsqueda en catálogo nacional de móviles CC</p>
+      {pagination && results.length > 0 && results.length < 3 ? (
+        <p className="muted search-hint">
+          Solo {pagination.count} artículo{pagination.count === 1 ? '' : 's'} con esa búsqueda exacta.
+          Revisa resultados similares abajo o prueba una consulta más corta.
+        </p>
+      ) : null}
       {results.length > 0 ? (
         <div className="filters">
           <label className="toggle">
@@ -384,29 +473,35 @@ function CcSearchPanel({ onSelect }) {
           </label>
         </div>
       ) : null}
-      <ul className="result-list">
-        {filtered.map((item) => (
-          <li key={item.productId} className="result-card cc-card">
-            <ProductThumb key={item.productId} imageUrl={item.imageUrl} retailer={RETAILERS.CC} size={72} />
-            <div className="result-body">
-              <h3>{item.title}</h3>
-              <p className="meta">{item.variantLabel ?? 'Cash Converters'}</p>
-              <p className={`stock-badge ${item.inStock ? 'in-stock' : 'out-of-stock'}`}>
-                {item.stockStatus ?? (item.inStock ? 'Disponible' : 'No disponible')}
-              </p>
-              <CcStoreSummary availability={item.availability} compact />
-              <p className="price">{formatPrice(item.sellPrice)}</p>
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={() => onSelect(item, query.trim())}
-              >
-                Vigilar este artículo
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      {filtered.length > 0 ? (
+        <CcResultList items={filtered} onSelect={onSelect} searchQuery={query.trim()} />
+      ) : results.length === 0 && !loading && query.trim().length >= 2 ? (
+        <p className="muted">Sin resultados. Prueba otra búsqueda.</p>
+      ) : null}
+      {pagination?.hasMore ? (
+        <button
+          type="button"
+          className="btn ghost block load-more"
+          disabled={loadingMore}
+          onClick={handleLoadMore}
+        >
+          {loadingMore ? 'Cargando…' : 'Cargar más resultados'}
+        </button>
+      ) : null}
+      {alternates.map((group) => (
+        <section key={group.query} className="alternate-results">
+          <h3 className="alternate-heading">
+            Similares: «{group.query}» ({group.results.length})
+          </h3>
+          <CcResultList items={group.results} onSelect={onSelect} searchQuery={group.query} />
+        </section>
+      ))}
+      {alternates.length === 0 && relatedQueriesTried.length > 0 && results.length > 0 ? (
+        <p className="muted search-hint">
+          También buscamos: {relatedQueriesTried.map((q) => `«${q}»`).join(', ')}. En catálogo CC solo
+          aparece este artículo para esas variantes.
+        </p>
+      ) : null}
     </section>
   );
 }
