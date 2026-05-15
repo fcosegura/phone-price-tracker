@@ -22,6 +22,7 @@ function rowToWatch(row) {
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    lastCheckedAt: row.updated_at,
     latestPrice: row.latest_sell_price != null ? { sellPrice: row.latest_sell_price, recordedAt: row.latest_price_at } : null,
     priceChange:
       row.latest_sell_price != null && row.prev_sell_price != null
