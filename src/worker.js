@@ -135,10 +135,14 @@ async function handleApiRequest(request, env, url, scopeId) {
     const limit = Number.parseInt(url.searchParams.get('limit') ?? '24', 10);
     const start = Number.parseInt(url.searchParams.get('start') ?? '0', 10);
     const includeAlternates = url.searchParams.get('alternates') !== '0';
+    const storeFilter = url.searchParams.get('store') === 'malaga' ? 'malaga' : null;
+    const mobileOnly = url.searchParams.get('mobileOnly') !== '0';
     const payload = await searchProducts(query, {
       limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 50) : 24,
       start: Number.isFinite(start) ? Math.max(0, start) : 0,
       includeAlternates,
+      storeFilter,
+      mobileOnly,
     });
     return jsonResponse({ query, ...payload });
   }

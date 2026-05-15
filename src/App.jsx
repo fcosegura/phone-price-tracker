@@ -333,12 +333,16 @@ function CcSearchPanel({ onSelect }) {
   const [results, setResults] = useState([]);
   const [alternates, setAlternates] = useState([]);
   const [relatedQueriesTried, setRelatedQueriesTried] = useState([]);
+  const [searchMeta, setSearchMeta] = useState(null);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [gradeFilter, setGradeFilter] = useState('');
   const [hideUnavailable, setHideUnavailable] = useState(true);
+  const [malagaOnly, setMalagaOnly] = useState(false);
+  const [mobileOnly, setMobileOnly] = useState(true);
+  const [hasSearched, setHasSearched] = useState(false);
   const [sortBy, setSortBy] = useState('price-desc');
 
   const filtered = useMemo(() => {
@@ -357,7 +361,11 @@ function CcSearchPanel({ onSelect }) {
       q,
       start: String(start),
       limit: '24',
+      mobileOnly: mobileOnly ? '1' : '0',
     });
+    if (malagaOnly) {
+      params.set('store', 'malaga');
+    }
     if (append) {
       params.set('alternates', '0');
     }
@@ -379,10 +387,42 @@ function CcSearchPanel({ onSelect }) {
       setResults(nextResults);
       setAlternates(payload.alternates ?? []);
       setRelatedQueriesTried(payload.relatedQueriesTried ?? []);
+      setSearchMeta(payload.meta ?? null);
     }
     setPagination(payload.pagination ?? null);
     return payload;
   }
+
+  useEffect(() => {
+    if (!hasSearched) {
+      return;
+    }
+    const q = query.trim();
+    if (q.length < 2) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        if (!cancelled) {
+          await runSearch({ q, start: 0, append: false });
+        }
+      } catch (searchError) {
+        if (!cancelled) {
+          setError(searchError.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [malagaOnly, mobileOnly, hasSearched]);
 
   async function handleSearch(event) {
     event?.preventDefault();
@@ -395,11 +435,13 @@ function CcSearchPanel({ onSelect }) {
     setError('');
     try {
       await runSearch({ q, start: 0, append: false });
+      setHasSearched(true);
     } catch (searchError) {
       setError(searchError.message);
       setResults([]);
       setAlternates([]);
       setRelatedQueriesTried([]);
+      setSearchMeta(null);
       setPagination(null);
     } finally {
       setLoading(false);
@@ -438,15 +480,49 @@ function CcSearchPanel({ onSelect }) {
         </button>
       </form>
       {error ? <p className="error">{error}</p> : null}
-      <p className="muted search-scope">Búsqueda en catálogo nacional de móviles CC</p>
-      {pagination && results.length > 0 && results.length < 3 ? (
+      <p className="muted search-scope">
+        {mobileOnly
+          ? 'Catálogo online de móviles (nacional). Cada artículo = 1 unidad en 1 tienda.'
+          : 'Catálogo online general (nacional).'}
+      </p>
+      {searchMeta?.expandedCatalog ? (
+        <p className="muted search-hint">
+          Sin resultados en móviles en Málaga; hemos ampliado a todo el catálogo online.
+        </p>
+      ) : null}
+      {malagaOnly && filtered.length === 0 && !loading && query.trim().length >= 2 ? (
+        <p className="muted search-hint">
+          No hay ese modelo publicado en las tiendas CC de Málaga (Mauricio Moro, Velázquez). Suele
+          haber stock en otras ciudades o solo en tienda física sin web.{' '}
+          <a href="https://www.cashconverters.es/tiendas/malaga/" target="_blank" rel="noreferrer">
+            Ver tiendas Málaga
+          </a>
+        </p>
+      ) : null}
+      {pagination && results.length > 0 && results.length < 3 && !malagaOnly ? (
         <p className="muted search-hint">
           Solo {pagination.count} artículo{pagination.count === 1 ? '' : 's'} con esa búsqueda exacta.
           Revisa resultados similares abajo o prueba una consulta más corta.
         </p>
       ) : null}
-      {results.length > 0 ? (
+      {results.length > 0 || query.trim().length >= 2 ? (
         <div className="filters">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={malagaOnly}
+              onChange={(e) => setMalagaOnly(e.target.checked)}
+            />
+            Solo tiendas Málaga (web)
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={mobileOnly}
+              onChange={(e) => setMobileOnly(e.target.checked)}
+            />
+            Solo categoría móviles
+          </label>
           <label className="toggle">
             <input
               type="checkbox"
@@ -478,7 +554,7 @@ function CcSearchPanel({ onSelect }) {
       ) : results.length === 0 && !loading && query.trim().length >= 2 ? (
         <p className="muted">Sin resultados. Prueba otra búsqueda.</p>
       ) : null}
-      {pagination?.hasMore ? (
+      {pagination?.hasMore && !malagaOnly ? (
         <button
           type="button"
           className="btn ghost block load-more"

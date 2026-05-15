@@ -1,6 +1,7 @@
 import { buildAlternateQueries } from './queryVariants.js';
 import { dedupeProducts, mapDatalayerToProduct } from './mappers.js';
 import { parseProductDatalayers, parseStoreModal, shopCodeFromPid } from './parse.js';
+import { filterMalagaProducts } from './stores.js';
 
 const SITE_ORIGIN = 'https://www.cashconverters.es';
 const STORE_API = `${SITE_ORIGIN}/on/demandware.store/Sites-CashConvertersCI-Site/es_ES`;
@@ -150,21 +151,41 @@ export async function searchProducts(
     limit = 24,
     start = 0,
     categoryId = MOBILE_CATEGORY_ID,
+    mobileOnly = true,
+    storeFilter = null,
     includeAlternates = true,
   } = {},
 ) {
   const capped = Math.max(1, Math.min(limit, 50));
   const offset = Math.max(0, start);
+  const malagaFilter = storeFilter === 'malaga';
+  const effectiveCategory = mobileOnly ? (categoryId ?? MOBILE_CATEGORY_ID) : null;
   const storeCache = new Map();
 
-  let results = await searchPage(query, {
-    limit: capped,
-    start: offset,
-    categoryId,
-  });
-  results = await enrichWithStoreNames(results, storeCache);
+  async function loadPage(catId) {
+    let batch = await searchPage(query, {
+      limit: malagaFilter ? Math.min(capped * 4, 50) : capped,
+      start: offset,
+      categoryId: catId,
+    });
+    batch = await enrichWithStoreNames(batch, storeCache);
+    if (malagaFilter) {
+      batch = filterMalagaProducts(batch);
+    }
+    return batch;
+  }
 
-  const hasMore = results.length >= capped;
+  let results = await loadPage(effectiveCategory);
+  let searchedCategory = effectiveCategory;
+  let expandedCatalog = false;
+
+  if (malagaFilter && results.length === 0 && offset === 0 && effectiveCategory) {
+    results = await loadPage(null);
+    searchedCategory = null;
+    expandedCatalog = true;
+  }
+
+  const hasMore = !malagaFilter && results.length >= capped;
   const pagination = {
     start: offset,
     limit: capped,
@@ -175,14 +196,14 @@ export async function searchProducts(
 
   let alternates = [];
   const relatedQueriesTried = [];
-  if (includeAlternates && offset === 0 && results.length < FEW_RESULTS_THRESHOLD) {
+  if (includeAlternates && offset === 0 && results.length < FEW_RESULTS_THRESHOLD && !malagaFilter) {
     const candidates = buildAlternateQueries(query);
     const exactIds = new Set(results.map((p) => p.productId));
     for (const altQuery of candidates) {
       let altResults = await searchPage(altQuery, {
         limit: capped,
         start: 0,
-        categoryId,
+        categoryId: effectiveCategory,
       });
       if (altResults.length === 0) {
         continue;
@@ -205,7 +226,15 @@ export async function searchProducts(
     pagination,
     alternates,
     relatedQueriesTried,
-    categoryId: categoryId ?? null,
+    categoryId: searchedCategory,
+    meta: {
+      mobileOnly,
+      storeFilter: malagaFilter ? 'malaga' : null,
+      expandedCatalog,
+      catalogNote: malagaFilter
+        ? 'En la web de CC cada móvil es una unidad en una tienda concreta (Mauricio Moro CC018, Velázquez CC044). Si no hay resultados, no está publicado online en Málaga ahora.'
+        : 'Cada resultado es un artículo único en la tienda indicada (catálogo nacional online).',
+    },
   };
 }
 
