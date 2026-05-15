@@ -65,7 +65,10 @@ export async function searchBoxes(query, { firstRecord = 1, countRecord = 20, co
     page,
     config: searchConfig,
   });
-  return hits.map(mapAlgoliaHit).filter((box) => box.boxId);
+  return hits
+    .map(mapAlgoliaHit)
+    .filter((box) => box.boxId)
+    .sort((a, b) => Number(b.inStock) - Number(a.inStock) || (a.sellPrice ?? 0) - (b.sellPrice ?? 0));
 }
 
 export async function getBoxDetail(boxId, country) {
@@ -119,17 +122,14 @@ export async function getBoxWithAvailability(boxId, country) {
     }
   }
 
-  if (detail.stockQuantity != null || detail.stockStatus) {
-    const inStock =
-      detail.stockStatus?.toLowerCase?.().includes('stock') &&
-      !detail.stockStatus?.toLowerCase?.().includes('out');
+  if (detail.inStock || detail.stockQuantity != null) {
     return {
       ...detail,
       stores: [
         {
           storeId: 'catalog',
-          storeName: 'Catálogo CeX',
-          inStock: inStock ?? Number(detail.stockQuantity) > 0,
+          storeName: 'CeX online',
+          inStock: detail.inStock ?? Number(detail.stockQuantity) > 0,
           quantity: detail.stockQuantity ?? null,
         },
       ],

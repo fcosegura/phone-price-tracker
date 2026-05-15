@@ -79,13 +79,18 @@ function SearchPanel({ onSelect }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [gradeFilter, setGradeFilter] = useState('');
+  const [hideOutOfStock, setHideOutOfStock] = useState(true);
 
   const filtered = useMemo(() => {
-    if (!gradeFilter) {
-      return results;
+    let list = results;
+    if (hideOutOfStock) {
+      list = list.filter((item) => item.inStock);
     }
-    return results.filter((item) => (item.grade ?? '').toUpperCase() === gradeFilter);
-  }, [results, gradeFilter]);
+    if (gradeFilter) {
+      list = list.filter((item) => (item.grade ?? '').toUpperCase() === gradeFilter);
+    }
+    return list;
+  }, [results, gradeFilter, hideOutOfStock]);
 
   async function handleSearch(event) {
     event.preventDefault();
@@ -125,6 +130,14 @@ function SearchPanel({ onSelect }) {
       {error ? <p className="error">{error}</p> : null}
       {results.length > 0 ? (
         <div className="filters">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={hideOutOfStock}
+              onChange={(e) => setHideOutOfStock(e.target.checked)}
+            />
+            Solo con stock
+          </label>
           <label>
             Grado
             <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
@@ -147,6 +160,9 @@ function SearchPanel({ onSelect }) {
             <div className="result-body">
               <h3>{item.title}</h3>
               <p className="meta">{item.variantLabel ?? 'Variante CeX'}</p>
+              <p className={`stock-badge ${item.inStock ? 'in-stock' : 'out-of-stock'}`}>
+                {item.stockStatus ?? (item.inStock ? 'Con stock' : 'Sin stock')}
+              </p>
               <p className="price">{formatPrice(item.sellPrice)}</p>
               <button
                 type="button"
