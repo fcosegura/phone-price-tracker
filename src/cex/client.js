@@ -1,7 +1,8 @@
 import { mapBoxDetail, mapBoxesResponse, mapStoresFromDetail } from './mappers.js';
 
 const DEFAULT_COUNTRY = 'es';
-const USER_AGENT = 'phone-price-tracker/0.1 (+https://github.com/fcosegura/phone-price-tracker)';
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 export function getCexBaseUrl(country = DEFAULT_COUNTRY) {
   return `https://wss2.cex.${country}.webuy.io/v3`;
@@ -17,7 +18,10 @@ async function cexFetch(path, searchParams = {}, country = DEFAULT_COUNTRY) {
 
   const response = await fetch(url.toString(), {
     headers: {
-      accept: 'application/json',
+      accept: 'application/json, text/plain, */*',
+      'accept-language': 'es-ES,es;q=0.9',
+      origin: 'https://es.webuy.com',
+      referer: 'https://es.webuy.com/',
       'user-agent': USER_AGENT,
     },
   });
