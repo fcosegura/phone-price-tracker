@@ -29,16 +29,44 @@ async function ccFetch(path, searchParams = {}) {
   return response.text();
 }
 
-export async function searchProducts(query, { limit = 24 } = {}) {
-  const html = await ccFetch('/SearchServices-GetSuggestions', { q: query.trim() });
-  const layers = parseProductDatalayers(html);
-  const products = layers
+async function searchViaShow(query, limit) {
+  const html = await ccFetch('/Search-Show', {
+    q: query.trim(),
+    start: 0,
+    sz: Math.min(limit, 50),
+  });
+  return parseProductDatalayers(html)
     .map((layer) => mapDatalayerToProduct(layer))
     .filter(Boolean);
-  const sorted = dedupeProducts(products).sort(
-    (a, b) => (b.sellPrice ?? 0) - (a.sellPrice ?? 0),
-  );
-  return sorted.slice(0, Math.max(1, Math.min(limit, 50)));
+}
+
+async function searchViaSuggestions(query) {
+  const html = await ccFetch('/SearchServices-GetSuggestions', { q: query.trim() });
+  return parseProductDatalayers(html)
+    .map((layer) => mapDatalayerToProduct(layer))
+    .filter(Boolean);
+}
+
+/** Búsqueda en catálogo nacional CC (Search-Show); sugerencias solo como respaldo. */
+export async function searchProducts(query, { limit = 24 } = {}) {
+  const capped = Math.max(1, Math.min(limit, 50));
+  let products = [];
+  try {
+    products = await searchViaShow(query, capped);
+  } catch {
+    products = [];
+  }
+  if (products.length < capped) {
+    try {
+      const extra = await searchViaSuggestions(query);
+      products = dedupeProducts([...products, ...extra]);
+    } catch {
+      // mantener resultados de Search-Show si los hay
+    }
+  }
+  return dedupeProducts(products)
+    .sort((a, b) => (b.sellPrice ?? 0) - (a.sellPrice ?? 0))
+    .slice(0, capped);
 }
 
 async function fetchStoreName(pid) {
