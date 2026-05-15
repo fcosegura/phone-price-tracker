@@ -13,6 +13,23 @@ function formatPrice(value) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value);
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return new Intl.DateTimeFormat('es-ES', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 function cexImageProxyUrl(imageUrl) {
   if (!imageUrl) {
     return null;
@@ -367,6 +384,7 @@ function DetailView({ watchId, onBack }) {
     latestPrice != null && prevPrice != null
       ? latestPrice - prevPrice
       : null;
+  const lastCheckedLabel = formatDateTime(data.watch.lastCheckedAt ?? data.watch.updatedAt);
 
   return (
     <section className="panel detail">
@@ -382,7 +400,10 @@ function DetailView({ watchId, onBack }) {
           {formatPrice(delta)} vs lectura anterior
         </span>
       ) : (
-        <span className="badge neutral">Sin cambio vs lectura anterior</span>
+        <span className="badge neutral">
+          Sin cambio vs lectura anterior
+          {lastCheckedLabel ? <span className="badge-note">Último check: {lastCheckedLabel}</span> : null}
+        </span>
       )}
       <button type="button" className="btn primary block" onClick={handleRefresh}>
         Actualizar ahora

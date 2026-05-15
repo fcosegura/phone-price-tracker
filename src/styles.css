@@ -371,6 +371,12 @@ select {
   color: var(--muted);
 }
 
+.badge-note {
+  display: block;
+  margin-top: 2px;
+  font-weight: 500;
+}
+
 .chart {
   width: 100%;
   height: 140px;
