@@ -1,4 +1,4 @@
-import { searchAlgoliaBoxes } from './algolia.js';
+import { queryAlgoliaIndex, searchAlgoliaBoxes } from './algolia.js';
 import {
   mapAlgoliaHit,
   mapBoxDetail,
@@ -8,15 +8,54 @@ import { getCexSearchConfig } from './settings.js';
 import { attachAvailabilitySummary, storesFromAlgoliaHit } from './storeAvailability.js';
 
 const DEFAULT_COUNTRY = 'es';
+const MAX_ALGOLIA_HITS_PER_PAGE = 100;
+const DEFAULT_SEARCH_LIMIT = 250;
+const MAX_SEARCH_LIMIT = 500;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
-function compareSearchResults(a, b) {
+function compareSearchResultsByStock(a, b) {
   return (
     Number(b.availability?.hasMalagaPickup) - Number(a.availability?.hasMalagaPickup) ||
     Number(b.inStock) - Number(a.inStock) ||
     (b.sellPrice ?? 0) - (a.sellPrice ?? 0)
   );
+}
+
+function compareSearchResultsByPrice(direction) {
+  return (a, b) => {
+    const aPrice = a.sellPrice ?? (direction === 'asc' ? Number.POSITIVE_INFINITY : 0);
+    const bPrice = b.sellPrice ?? (direction === 'asc' ? Number.POSITIVE_INFINITY : 0);
+    return direction === 'asc' ? aPrice - bPrice : bPrice - aPrice;
+  };
+}
+
+function getSearchIndexName(baseIndexName, sortBy) {
+  if (sortBy === 'price-asc') {
+    return `${baseIndexName}_price_asc`;
+  }
+  if (sortBy === 'price-desc') {
+    return `${baseIndexName}_price_desc`;
+  }
+  return baseIndexName;
+}
+
+function getComparator(sortBy) {
+  if (sortBy === 'price-asc') {
+    return compareSearchResultsByPrice('asc');
+  }
+  if (sortBy === 'price-desc') {
+    return compareSearchResultsByPrice('desc');
+  }
+  return compareSearchResultsByStock;
+}
+
+function normalizeSearchLimit(countRecord) {
+  const parsed = Number.parseInt(countRecord ?? DEFAULT_SEARCH_LIMIT, 10);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_SEARCH_LIMIT;
+  }
+  return Math.min(Math.max(parsed, 1), MAX_SEARCH_LIMIT);
 }
 
 export function getCexBaseUrl(country = DEFAULT_COUNTRY) {
@@ -65,15 +104,54 @@ async function cexFetch(path, searchParams = {}, country = DEFAULT_COUNTRY) {
   return payload;
 }
 
-export async function searchBoxes(query, { firstRecord = 1, countRecord = 50, country } = {}) {
+export async function searchBoxes(
+  query,
+  {
+    firstRecord = 1,
+    countRecord = DEFAULT_SEARCH_LIMIT,
+    country,
+    sortBy = 'relevance',
+    inStockOnly = false,
+    includeMeta = false,
+  } = {},
+) {
   const searchConfig = await getCexSearchConfig(country ?? DEFAULT_COUNTRY);
-  const hitsPerPage = Math.max(1, Math.min(countRecord, 50));
-  const page = Math.max(0, Math.floor((firstRecord - 1) / hitsPerPage));
-  const hits = await searchAlgoliaBoxes(query, {
+  const limit = normalizeSearchLimit(countRecord);
+  const hitsPerPage = Math.min(limit, MAX_ALGOLIA_HITS_PER_PAGE);
+  const firstPage = Math.max(0, Math.floor((firstRecord - 1) / hitsPerPage));
+  const indexName = getSearchIndexName(searchConfig.indexName, sortBy);
+  const facetFilters = inStockOnly ? 'availability:Disponible online' : null;
+  const firstPayload = await queryAlgoliaIndex(query, {
     hitsPerPage,
-    page,
+    page: firstPage,
     config: searchConfig,
+    indexName,
+    facetFilters,
   });
+  const nbHits = Number(firstPayload?.nbHits ?? 0);
+  const nbPages = Number(firstPayload?.nbPages ?? 0);
+  const pagesToFetch = Math.max(
+    1,
+    Math.min(Math.ceil(limit / hitsPerPage), Math.max(nbPages - firstPage, 0)),
+  );
+  const extraPayloads =
+    pagesToFetch > 1
+      ? await Promise.all(
+        Array.from({ length: pagesToFetch - 1 }, (_, index) =>
+          queryAlgoliaIndex(query, {
+            hitsPerPage,
+            page: firstPage + index + 1,
+            config: searchConfig,
+            indexName,
+            facetFilters,
+          }),
+        ),
+      )
+      : [];
+  const hits = [firstPayload, ...extraPayloads]
+    .flatMap((payload) => (Array.isArray(payload?.hits) ? payload.hits : []))
+    .slice(0, limit);
+  const seenBoxIds = new Set();
   let results = hits
     .map((hit) => {
       const box = mapAlgoliaHit(hit);
@@ -83,11 +161,29 @@ export async function searchBoxes(query, { firstRecord = 1, countRecord = 50, co
         inStockOnline: hit.inStockOnline,
       });
     })
-    .filter((box) => box.boxId)
-    .sort(compareSearchResults);
+    .filter((box) => {
+      if (!box.boxId || seenBoxIds.has(box.boxId)) {
+        return false;
+      }
+      seenBoxIds.add(box.boxId);
+      return true;
+    })
+    .sort(getComparator(sortBy));
 
   results = await enrichInStockWithStoreStock(results, country ?? DEFAULT_COUNTRY);
-  return results.sort(compareSearchResults);
+  results = results.sort(getComparator(sortBy));
+  if (includeMeta) {
+    return {
+      results,
+      total: nbHits,
+      returned: results.length,
+      truncated: nbHits > results.length,
+      limit,
+      sortBy,
+      inStockOnly,
+    };
+  }
+  return results;
 }
 
 async function enrichInStockWithStoreStock(results, country) {
