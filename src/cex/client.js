@@ -1,4 +1,4 @@
-import { queryAlgoliaIndex, searchAlgoliaBoxes } from './algolia.js';
+import { queryAlgoliaIndex } from './algolia.js';
 import {
   mapAlgoliaHit,
   mapBoxDetail,
