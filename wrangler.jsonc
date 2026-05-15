@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "phone-price-tracker",
+  "main": "./src/worker.js",
+  "compatibility_date": "2026-05-12",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "phone-price-tracker-db",
+      "database_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 */6 * * *"]
+  },
+  "vars": {
+    "APP_NAME": "CeX Price Tracker",
+    "CEX_COUNTRY": "es",
+    "MAX_WATCHES_PER_SCOPE": "20"
+  }
+}

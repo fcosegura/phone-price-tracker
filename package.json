@@ -1,0 +1,41 @@
+{
+  "name": "phone-price-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CeX España price and availability tracker on Cloudflare Workers + D1.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "cf:db:local": "node ./scripts/run-d1-local.mjs",
+    "cf:dev": "wrangler dev --local --ip localhost --port 8788",
+    "dev:full": "node ./scripts/dev-local.mjs",
+    "check": "npm run lint && npm run build",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:ci": "npm run build && wrangler deploy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fcosegura/phone-price-tracker.git"
+  },
+  "dependencies": {
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "vite": "^8.0.12",
+    "wrangler": "^4.90.1"
+  }
+}
