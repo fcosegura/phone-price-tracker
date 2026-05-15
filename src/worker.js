@@ -1,4 +1,5 @@
 import { getBoxWithAvailability, searchBoxes } from './cex/client.js';
+import { handleCexImageRequest } from './cex/imageProxy.js';
 import {
   createWatch,
   deleteWatch,
@@ -109,6 +110,10 @@ async function handleApiRequest(request, env, url, scopeId) {
       country,
     });
     return jsonResponse({ query, results });
+  }
+
+  if (url.pathname === '/api/cex/image' && request.method === 'GET') {
+    return handleCexImageRequest(url);
   }
 
   if (url.pathname === '/api/cex/product' && request.method === 'GET') {

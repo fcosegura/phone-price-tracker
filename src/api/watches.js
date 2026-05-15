@@ -1,4 +1,4 @@
-import { getBoxWithAvailability } from '../cex/client.js';
+import { getBoxDetail, getBoxWithAvailability } from '../cex/client.js';
 import { normalizeImageUrl } from '../cex/mappers.js';
 import { summarizeAvailability } from '../cex/storeAvailability.js';
 
@@ -75,7 +75,33 @@ async function getLatestAvailabilityMap(env, deviceIds) {
   return map;
 }
 
+async function persistWatchImage(env, deviceId, imageUrl) {
+  const normalized = normalizeImageUrl(imageUrl);
+  if (!normalized) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  await env.DB.prepare('UPDATE tracked_devices SET image_url = ?2, updated_at = ?3 WHERE id = ?1')
+    .bind(deviceId, normalized, now)
+    .run();
+  return normalized;
+}
+
+async function backfillWatchImage(env, watch, country) {
+  if (watch.imageUrl) {
+    return watch;
+  }
+  try {
+    const detail = await getBoxDetail(watch.cexBoxId, country);
+    const imageUrl = await persistWatchImage(env, watch.id, detail.imageUrl);
+    return imageUrl ? { ...watch, imageUrl } : watch;
+  } catch {
+    return watch;
+  }
+}
+
 export async function listWatches(env, scopeId) {
+  const country = env.CEX_COUNTRY ?? 'es';
   const result = await env.DB.prepare(
     `SELECT d.*,
       (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_sell_price,
@@ -93,10 +119,21 @@ export async function listWatches(env, scopeId) {
     env,
     watches.map((watch) => watch.id),
   );
-  return watches.map((watch) => ({
+  const withAvailability = watches.map((watch) => ({
     ...watch,
     availability: availabilityMap.get(watch.id) ?? null,
   }));
+
+  const needsImage = withAvailability.filter((watch) => !watch.imageUrl);
+  if (needsImage.length === 0) {
+    return withAvailability;
+  }
+
+  const backfilled = await Promise.all(
+    needsImage.map((watch) => backfillWatchImage(env, watch, country)),
+  );
+  const byId = new Map(backfilled.map((watch) => [watch.id, watch]));
+  return withAvailability.map((watch) => byId.get(watch.id) ?? watch);
 }
 
 export async function getWatch(env, scopeId, deviceId) {
@@ -274,6 +311,7 @@ export async function refreshWatch(env, scopeId, deviceId, country) {
   }
   const live = await getBoxWithAvailability(watch.cexBoxId, country);
   await recordSnapshots(env, deviceId, live);
+  await persistWatchImage(env, deviceId, live.imageUrl);
   const updated = await getWatch(env, scopeId, deviceId);
   return {
     watch: { ...updated, availability: live.availability ?? null },
