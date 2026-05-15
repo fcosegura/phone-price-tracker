@@ -13,6 +13,34 @@ function formatPrice(value) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value);
 }
 
+function cexImageProxyUrl(imageUrl) {
+  if (!imageUrl) {
+    return null;
+  }
+  return `/api/cex/image?url=${encodeURIComponent(imageUrl)}`;
+}
+
+function ProductThumb({ imageUrl, size = 64 }) {
+  const [failed, setFailed] = useState(false);
+  const src = cexImageProxyUrl(imageUrl);
+
+  if (!src || failed) {
+    return <div className="thumb-placeholder" style={{ width: size, height: size }} aria-hidden="true" />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      width={size}
+      height={size}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function StoreAvailabilitySummary({ availability, compact = false }) {
   if (!availability) {
     return null;
@@ -221,11 +249,7 @@ function SearchPanel({ onSelect }) {
       <ul className="result-list">
         {filtered.map((item) => (
           <li key={item.boxId} className="result-card">
-            {item.imageUrl ? (
-              <img src={item.imageUrl} alt="" loading="lazy" width="72" height="72" />
-            ) : (
-              <div className="thumb-placeholder" />
-            )}
+            <ProductThumb key={item.boxId} imageUrl={item.imageUrl} size={72} />
             <div className="result-body">
               <h3>{item.title}</h3>
               <p className="meta">{item.variantLabel ?? 'Variante CeX'}</p>
@@ -254,11 +278,7 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh }) {
   return (
     <article className="watch-card">
       <button type="button" className="watch-main" onClick={() => onOpen(watch)}>
-        {watch.imageUrl ? (
-          <img src={watch.imageUrl} alt="" loading="lazy" width="64" height="64" />
-        ) : (
-          <div className="thumb-placeholder" />
-        )}
+        <ProductThumb key={watch.id} imageUrl={watch.imageUrl} size={64} />
         <div className="watch-copy">
           <h3>{watch.title}</h3>
           <p className="meta">{watch.variantLabel ?? watch.cexBoxId}</p>
