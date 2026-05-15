@@ -31,20 +31,55 @@ export function parseVariantFromTitle(title = '') {
   };
 }
 
+/** CeX devuelve rutas con espacios y acentos; el navegador necesita URL codificada. */
+export function normalizeImageUrl(url) {
+  if (typeof url !== 'string' || !url.trim()) {
+    return null;
+  }
+  const trimmed = url.trim();
+  try {
+    if (trimmed.startsWith('//')) {
+      return new URL(`https:${trimmed}`).href;
+    }
+    return new URL(trimmed).href;
+  } catch {
+    return null;
+  }
+}
+
 function pickImageUrl(box) {
+  const candidates = [];
   if (typeof box?.imageUrl === 'string') {
-    return box.imageUrl;
+    candidates.push(box.imageUrl);
   }
   if (typeof box?.boxLargeImage === 'string') {
-    return box.boxLargeImage;
+    candidates.push(box.boxLargeImage);
   }
-  if (Array.isArray(box?.imageUrls) && box.imageUrls.length > 0) {
-    return box.imageUrls[0];
+  if (typeof box?.productImage === 'string') {
+    candidates.push(box.productImage);
   }
-  if (box?.imageUrls && typeof box.imageUrls === 'object') {
-    const values = Object.values(box.imageUrls);
-    if (values.length > 0 && typeof values[0] === 'string') {
-      return values[0];
+  if (Array.isArray(box?.imageUrls)) {
+    candidates.push(...box.imageUrls);
+  } else if (box?.imageUrls && typeof box.imageUrls === 'object') {
+    const urls = box.imageUrls;
+    for (const key of [
+      'large',
+      'medium',
+      'small',
+      'masterBoxLarge',
+      'masterBoxMedium',
+      'masterBoxSmall',
+    ]) {
+      if (typeof urls[key] === 'string') {
+        candidates.push(urls[key]);
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normalized = normalizeImageUrl(candidate);
+    if (normalized) {
+      return normalized;
     }
   }
   return null;

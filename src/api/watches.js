@@ -1,4 +1,5 @@
 import { getBoxWithAvailability } from '../cex/client.js';
+import { normalizeImageUrl } from '../cex/mappers.js';
 import { summarizeAvailability } from '../cex/storeAvailability.js';
 
 const MAX_HISTORY = 90;
@@ -13,7 +14,7 @@ function rowToWatch(row) {
     searchQuery: row.search_query,
     cexBoxId: row.cex_box_id,
     title: row.title,
-    imageUrl: row.image_url,
+    imageUrl: normalizeImageUrl(row.image_url),
     grade: row.grade,
     storageGb: row.storage_gb,
     color: row.color,
@@ -159,7 +160,7 @@ export async function createWatch(env, scopeId, body, maxWatches) {
       String(body.searchQuery ?? '').trim() || live.title,
       boxId,
       body.title ?? live.title,
-      body.imageUrl ?? live.imageUrl,
+      normalizeImageUrl(body.imageUrl ?? live.imageUrl),
       body.grade ?? live.grade,
       body.storageGb ?? live.storageGb,
       body.color ?? live.color,
