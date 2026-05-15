@@ -11,6 +11,14 @@ const DEFAULT_COUNTRY = 'es';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
+function compareSearchResults(a, b) {
+  return (
+    Number(b.availability?.hasMalagaPickup) - Number(a.availability?.hasMalagaPickup) ||
+    Number(b.inStock) - Number(a.inStock) ||
+    (b.sellPrice ?? 0) - (a.sellPrice ?? 0)
+  );
+}
+
 export function getCexBaseUrl(country = DEFAULT_COUNTRY) {
   return `https://wss2.cex.${country}.webuy.io/v3`;
 }
@@ -76,20 +84,10 @@ export async function searchBoxes(query, { firstRecord = 1, countRecord = 50, co
       });
     })
     .filter((box) => box.boxId)
-    .sort(
-      (a, b) =>
-        Number(b.availability?.hasMalagaPickup) - Number(a.availability?.hasMalagaPickup) ||
-        Number(b.inStock) - Number(a.inStock) ||
-        (a.sellPrice ?? 0) - (b.sellPrice ?? 0),
-    );
+    .sort(compareSearchResults);
 
   results = await enrichInStockWithStoreStock(results, country ?? DEFAULT_COUNTRY);
-  return results.sort(
-    (a, b) =>
-      Number(b.availability?.hasMalagaPickup) - Number(a.availability?.hasMalagaPickup) ||
-      Number(b.inStock) - Number(a.inStock) ||
-      (a.sellPrice ?? 0) - (b.sellPrice ?? 0),
-  );
+  return results.sort(compareSearchResults);
 }
 
 async function enrichInStockWithStoreStock(results, country) {

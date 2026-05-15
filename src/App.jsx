@@ -110,6 +110,17 @@ function PriceChart({ prices }) {
   );
 }
 
+function sortSearchResults(list, sortBy) {
+  const sorted = [...list];
+  if (sortBy === 'price-asc') {
+    return sorted.sort((a, b) => (a.sellPrice ?? 0) - (b.sellPrice ?? 0));
+  }
+  if (sortBy === 'price-desc') {
+    return sorted.sort((a, b) => (b.sellPrice ?? 0) - (a.sellPrice ?? 0));
+  }
+  return sorted;
+}
+
 function SearchPanel({ onSelect }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -118,6 +129,7 @@ function SearchPanel({ onSelect }) {
   const [gradeFilter, setGradeFilter] = useState('');
   const [hideOutOfStock, setHideOutOfStock] = useState(true);
   const [malagaOnly, setMalagaOnly] = useState(false);
+  const [sortBy, setSortBy] = useState('price-desc');
 
   const filtered = useMemo(() => {
     let list = results;
@@ -130,8 +142,8 @@ function SearchPanel({ onSelect }) {
     if (gradeFilter) {
       list = list.filter((item) => (item.grade ?? '').toUpperCase() === gradeFilter);
     }
-    return list;
-  }, [results, gradeFilter, hideOutOfStock, malagaOnly]);
+    return sortSearchResults(list, sortBy);
+  }, [results, gradeFilter, hideOutOfStock, malagaOnly, sortBy]);
 
   async function handleSearch(event) {
     event.preventDefault();
@@ -194,6 +206,14 @@ function SearchPanel({ onSelect }) {
               <option value="A">A</option>
               <option value="B">B</option>
               <option value="C">C</option>
+            </select>
+          </label>
+          <label>
+            Ordenar
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="price-desc">Precio: mayor a menor</option>
+              <option value="price-asc">Precio: menor a mayor</option>
+              <option value="relevance">Relevancia / stock</option>
             </select>
           </label>
         </div>
