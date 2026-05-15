@@ -6,6 +6,11 @@ const VIEWS = {
   DETAIL: 'detail',
 };
 
+const RETAILERS = {
+  CEX: 'cex',
+  CC: 'cc',
+};
+
 function formatPrice(value) {
   if (value == null || Number.isNaN(value)) {
     return '—';
@@ -13,16 +18,17 @@ function formatPrice(value) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value);
 }
 
-function cexImageProxyUrl(imageUrl) {
+function productImageProxyUrl(imageUrl, retailer = RETAILERS.CEX) {
   if (!imageUrl) {
     return null;
   }
-  return `/api/cex/image?url=${encodeURIComponent(imageUrl)}`;
+  const route = retailer === RETAILERS.CC ? '/api/cc/image' : '/api/cex/image';
+  return `${route}?url=${encodeURIComponent(imageUrl)}`;
 }
 
-function ProductThumb({ imageUrl, size = 64 }) {
+function ProductThumb({ imageUrl, retailer = RETAILERS.CEX, size = 64 }) {
   const [failed, setFailed] = useState(false);
-  const src = cexImageProxyUrl(imageUrl);
+  const src = productImageProxyUrl(imageUrl, retailer);
 
   if (!src || failed) {
     return <div className="thumb-placeholder" style={{ width: size, height: size }} aria-hidden="true" />;
@@ -38,6 +44,27 @@ function ProductThumb({ imageUrl, size = 64 }) {
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
     />
+  );
+}
+
+function CcStoreSummary({ availability, compact = false }) {
+  if (!availability) {
+    return null;
+  }
+  if (!availability.inStock) {
+    return compact ? null : <p className="muted">No disponible</p>;
+  }
+  return (
+    <div className={`availability-summary cc-store${compact ? ' is-compact' : ''}`}>
+      <p className="availability-heading">Artículo único</p>
+      {availability.storeName ? (
+        <p className="cc-store-name">
+          <strong>{availability.storeName}</strong>
+        </p>
+      ) : (
+        <p className="muted">Tienda por confirmar (actualiza el seguimiento)</p>
+      )}
+    </div>
   );
 }
 
@@ -273,17 +300,133 @@ function SearchPanel({ onSelect }) {
   );
 }
 
-function WatchCard({ watch, onOpen, onRemove, onRefresh }) {
+function CcSearchPanel({ onSelect }) {
+  const [query, setQuery] = useState('Galaxy Z fold 7');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('');
+  const [hideUnavailable, setHideUnavailable] = useState(true);
+  const [sortBy, setSortBy] = useState('price-desc');
+
+  const filtered = useMemo(() => {
+    let list = results;
+    if (hideUnavailable) {
+      list = list.filter((item) => item.inStock);
+    }
+    if (gradeFilter) {
+      list = list.filter((item) => (item.grade ?? '').toLowerCase() === gradeFilter.toLowerCase());
+    }
+    return sortSearchResults(list, sortBy);
+  }, [results, gradeFilter, hideUnavailable, sortBy]);
+
+  async function handleSearch(event) {
+    event.preventDefault();
+    const q = query.trim();
+    if (q.length < 2) {
+      setError('Introduce al menos 2 caracteres.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const payload = await api(`/api/cc/search?q=${encodeURIComponent(q)}`);
+      setResults(payload.results ?? []);
+    } catch (searchError) {
+      setError(searchError.message);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h2>Buscar en Cash Converters</h2>
+      <form className="search-form" onSubmit={handleSearch}>
+        <input
+          type="search"
+          inputMode="search"
+          placeholder="Ej. Galaxy Z fold 7"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button type="submit" className="btn primary" disabled={loading}>
+          {loading ? 'Buscando…' : 'Buscar'}
+        </button>
+      </form>
+      {error ? <p className="error">{error}</p> : null}
+      {results.length > 0 ? (
+        <div className="filters">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={hideUnavailable}
+              onChange={(e) => setHideUnavailable(e.target.checked)}
+            />
+            Solo disponibles
+          </label>
+          <label>
+            Estado
+            <select value={gradeFilter} onChange={(e) => setGradeFilter(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="Usado">Usado</option>
+              <option value="Bueno">Bueno</option>
+              <option value="Perfecto">Perfecto</option>
+            </select>
+          </label>
+          <label>
+            Ordenar
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="price-desc">Precio: mayor a menor</option>
+              <option value="price-asc">Precio: menor a mayor</option>
+            </select>
+          </label>
+        </div>
+      ) : null}
+      <ul className="result-list">
+        {filtered.map((item) => (
+          <li key={item.productId} className="result-card cc-card">
+            <ProductThumb key={item.productId} imageUrl={item.imageUrl} retailer={RETAILERS.CC} size={72} />
+            <div className="result-body">
+              <h3>{item.title}</h3>
+              <p className="meta">{item.variantLabel ?? 'Cash Converters'}</p>
+              <p className={`stock-badge ${item.inStock ? 'in-stock' : 'out-of-stock'}`}>
+                {item.stockStatus ?? (item.inStock ? 'Disponible' : 'No disponible')}
+              </p>
+              <CcStoreSummary availability={item.availability} compact />
+              <p className="price">{formatPrice(item.sellPrice)}</p>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => onSelect(item, query.trim())}
+              >
+                Vigilar este artículo
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function WatchCard({ watch, retailer, onOpen, onRemove, onRefresh }) {
   const delta = formatDelta(watch);
+  const watchRetailer = retailer ?? watch.retailer ?? RETAILERS.CEX;
   return (
     <article className="watch-card">
       <button type="button" className="watch-main" onClick={() => onOpen(watch)}>
-        <ProductThumb key={watch.id} imageUrl={watch.imageUrl} size={64} />
+        <ProductThumb key={watch.id} imageUrl={watch.imageUrl} retailer={watchRetailer} size={64} />
         <div className="watch-copy">
           <h3>{watch.title}</h3>
-          <p className="meta">{watch.variantLabel ?? watch.cexBoxId}</p>
+          <p className="meta">{watch.variantLabel ?? watch.productId ?? watch.cexBoxId}</p>
           <p className="price">{formatPrice(watch.latestPrice?.sellPrice)}</p>
-          <StoreAvailabilitySummary availability={watch.availability} compact />
+          {watchRetailer === RETAILERS.CC ? (
+            <CcStoreSummary availability={watch.availability} compact />
+          ) : (
+            <StoreAvailabilitySummary availability={watch.availability} compact />
+          )}
           <span className={`badge ${delta.className}`}>{delta.label}</span>
         </div>
       </button>
@@ -299,7 +442,7 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh }) {
   );
 }
 
-function DetailView({ watchId, onBack }) {
+function DetailView({ watchId, retailer, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -398,31 +541,38 @@ function DetailView({ watchId, onBack }) {
         ))}
       </ul>
       <h3>Disponibilidad</h3>
-      <StoreAvailabilitySummary availability={data.availabilitySummary} />
-      {data.availabilitySummary?.hasMalagaPickup ? null : data.availabilitySummary?.onlineAvailable ? (
-        <p className="muted detail-hint">
-          No hay recogida en tiendas de Málaga. Las demás ubicaciones con stock equivalen a compra online en
-          CeX.
-        </p>
-      ) : data.latestStores?.length ? (
-        <ul className="store-list muted-stores">
-          {data.latestStores
-            .filter((store) => store.in_stock)
-            .map((store) => (
-              <li key={`${store.store_id}-${store.recorded_at}`}>
-                <span>{store.store_name}</span>
-                <span className="out-stock">Sin recogida en Málaga</span>
-              </li>
-            ))}
-        </ul>
+      {retailer === RETAILERS.CC || data.watch?.retailer === RETAILERS.CC ? (
+        <CcStoreSummary availability={data.availabilitySummary} />
       ) : (
-        <p className="muted">Sin datos de tiendas; actualiza para refrescar stock.</p>
+        <>
+          <StoreAvailabilitySummary availability={data.availabilitySummary} />
+          {data.availabilitySummary?.hasMalagaPickup ? null : data.availabilitySummary?.onlineAvailable ? (
+            <p className="muted detail-hint">
+              No hay recogida en tiendas de Málaga. Las demás ubicaciones con stock equivalen a compra online en
+              CeX.
+            </p>
+          ) : data.latestStores?.length ? (
+            <ul className="store-list muted-stores">
+              {data.latestStores
+                .filter((store) => store.in_stock)
+                .map((store) => (
+                  <li key={`${store.store_id}-${store.recorded_at}`}>
+                    <span>{store.store_name}</span>
+                    <span className="out-stock">Sin recogida en Málaga</span>
+                  </li>
+                ))}
+            </ul>
+          ) : (
+            <p className="muted">Sin datos de tiendas; actualiza para refrescar stock.</p>
+          )}
+        </>
       )}
     </section>
   );
 }
 
 export default function App() {
+  const [retailer, setRetailer] = useState(RETAILERS.CEX);
   const [view, setView] = useState(VIEWS.HOME);
   const [watches, setWatches] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -431,9 +581,9 @@ export default function App() {
   const [pulling, setPulling] = useState(false);
 
   const loadWatches = useCallback(async () => {
-    const payload = await api('/api/watches');
+    const payload = await api(`/api/watches?retailer=${encodeURIComponent(retailer)}`);
     setWatches(payload.watches ?? []);
-  }, []);
+  }, [retailer]);
 
   useEffect(() => {
     let active = true;
@@ -450,6 +600,14 @@ export default function App() {
       active = false;
     };
   }, [loadWatches]);
+
+  function switchRetailer(nextRetailer) {
+    setRetailer(nextRetailer);
+    setView(VIEWS.HOME);
+    setSelectedId(null);
+    setMessage('');
+    setError('');
+  }
 
   useEffect(() => {
     let startY = 0;
@@ -484,10 +642,13 @@ export default function App() {
     setError('');
     setMessage('');
     try {
+      const productId = item.boxId ?? item.productId;
       await api('/api/watches', {
         method: 'POST',
         body: JSON.stringify({
-          cexBoxId: item.boxId,
+          retailer,
+          productId,
+          cexBoxId: productId,
           searchQuery,
           title: item.title,
           imageUrl: item.imageUrl,
@@ -527,11 +688,33 @@ export default function App() {
     }
   }
 
+  const headerTitle = retailer === RETAILERS.CC ? 'Cash Converters' : 'CeX Tracker';
+  const headerSubtitle =
+    retailer === RETAILERS.CC
+      ? 'Precios de móviles en Cash Converters España'
+      : 'Precios y stock en CeX España';
+
   return (
     <div className="app">
       <header className="header">
-        <h1>CeX Tracker</h1>
-        <p className="subtitle">Precios y stock en CeX España</p>
+        <nav className="retailer-tabs" aria-label="Tienda">
+          <button
+            type="button"
+            className={retailer === RETAILERS.CEX ? 'active' : ''}
+            onClick={() => switchRetailer(RETAILERS.CEX)}
+          >
+            CeX
+          </button>
+          <button
+            type="button"
+            className={retailer === RETAILERS.CC ? 'active' : ''}
+            onClick={() => switchRetailer(RETAILERS.CC)}
+          >
+            Cash Converters
+          </button>
+        </nav>
+        <h1>{headerTitle}</h1>
+        <p className="subtitle">{headerSubtitle}</p>
       </header>
 
       {pulling ? <p className="pull-hint">Actualizando…</p> : null}
@@ -539,10 +722,17 @@ export default function App() {
       {error ? <p className="error banner">{error}</p> : null}
 
       <main className="main">
-        {view === VIEWS.HOME ? <SearchPanel onSelect={handleAddWatch} /> : null}
+        {view === VIEWS.HOME && retailer === RETAILERS.CEX ? (
+          <SearchPanel onSelect={handleAddWatch} />
+        ) : null}
+        {view === VIEWS.HOME && retailer === RETAILERS.CC ? (
+          <CcSearchPanel onSelect={handleAddWatch} />
+        ) : null}
         {view === VIEWS.WATCHES ? (
           <section className="panel">
-            <h2>Mis móviles ({watches.length})</h2>
+            <h2>
+              Mis móviles {retailer === RETAILERS.CC ? 'CC' : 'CeX'} ({watches.length})
+            </h2>
             {watches.length === 0 ? (
               <p className="muted">No vigilas ningún listado. Busca un modelo para empezar.</p>
             ) : (
@@ -551,6 +741,7 @@ export default function App() {
                   <WatchCard
                     key={watch.id}
                     watch={watch}
+                    retailer={retailer}
                     onOpen={(w) => {
                       setSelectedId(w.id);
                       setView(VIEWS.DETAIL);
@@ -566,6 +757,7 @@ export default function App() {
         {view === VIEWS.DETAIL && selectedId ? (
           <DetailView
             watchId={selectedId}
+            retailer={retailer}
             onBack={() => {
               setView(VIEWS.WATCHES);
               loadWatches().catch(() => {});

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS tracked_devices (
   storage_gb INTEGER,
   color TEXT,
   variant_label TEXT,
+  retailer TEXT NOT NULL DEFAULT 'cex',
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -17,6 +18,9 @@ CREATE TABLE IF NOT EXISTS tracked_devices (
 
 CREATE INDEX IF NOT EXISTS idx_tracked_devices_scope
   ON tracked_devices(scope_id, is_active);
+
+CREATE INDEX IF NOT EXISTS idx_tracked_devices_retailer
+  ON tracked_devices(scope_id, retailer, is_active);
 
 CREATE TABLE IF NOT EXISTS price_snapshots (
   id TEXT PRIMARY KEY,

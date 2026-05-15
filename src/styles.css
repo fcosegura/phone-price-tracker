@@ -50,6 +50,37 @@ select {
     calc(72px + var(--safe-bottom));
 }
 
+.retailer-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.retailer-tabs button {
+  flex: 1;
+  border: 1px solid var(--surface-2);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.retailer-tabs button.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+}
+
+.cc-store .cc-store-name {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+
+.result-card.cc-card {
+  border-color: color-mix(in srgb, #f59e0b 35%, var(--surface-2));
+}
+
 .header h1 {
   margin: 0;
   font-size: 1.5rem;
