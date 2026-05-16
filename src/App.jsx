@@ -6,6 +6,13 @@ const VIEWS = {
   DETAIL: 'detail',
 };
 const SEARCH_RESULT_LIMIT = 250;
+const WATCH_SORT_OPTIONS = {
+  FAVORITES: 'favorites',
+  PRICE_ASC: 'price-asc',
+  PRICE_DESC: 'price-desc',
+  LAST_CHANGE_DESC: 'last-change-desc',
+  LAST_CHANGE_ASC: 'last-change-asc',
+};
 
 function formatPrice(value) {
   if (value == null || Number.isNaN(value)) {
@@ -110,6 +117,55 @@ function formatDelta(watch) {
     label: `${sign}${formatPrice(delta)}${pct}`,
     className: delta < 0 ? 'down' : 'up',
   };
+}
+
+function getWatchLastChange(watch) {
+  return watch.lastChangeAt ?? watch.latestPrice?.recordedAt ?? watch.lastCheckedAt ?? watch.updatedAt ?? watch.createdAt;
+}
+
+function getWatchPrice(watch) {
+  return watch.latestPrice?.sellPrice ?? null;
+}
+
+function compareNullableNumbers(a, b, direction = 'asc') {
+  const aMissing = a == null || Number.isNaN(a);
+  const bMissing = b == null || Number.isNaN(b);
+  if (aMissing && bMissing) {
+    return 0;
+  }
+  if (aMissing) {
+    return 1;
+  }
+  if (bMissing) {
+    return -1;
+  }
+  return direction === 'asc' ? a - b : b - a;
+}
+
+function compareWatchDates(a, b, direction = 'desc') {
+  const aTime = getWatchLastChange(a) ? new Date(getWatchLastChange(a)).getTime() : Number.NaN;
+  const bTime = getWatchLastChange(b) ? new Date(getWatchLastChange(b)).getTime() : Number.NaN;
+  return compareNullableNumbers(aTime, bTime, direction === 'asc' ? 'asc' : 'desc');
+}
+
+function sortWatches(list, sortBy) {
+  return [...list].sort((a, b) => {
+    const favoriteOrder = Number(b.isFavorite) - Number(a.isFavorite);
+    if (favoriteOrder !== 0) {
+      return favoriteOrder;
+    }
+
+    if (sortBy === WATCH_SORT_OPTIONS.PRICE_ASC) {
+      return compareNullableNumbers(getWatchPrice(a), getWatchPrice(b), 'asc') || compareWatchDates(a, b);
+    }
+    if (sortBy === WATCH_SORT_OPTIONS.PRICE_DESC) {
+      return compareNullableNumbers(getWatchPrice(a), getWatchPrice(b), 'desc') || compareWatchDates(a, b);
+    }
+    if (sortBy === WATCH_SORT_OPTIONS.LAST_CHANGE_ASC) {
+      return compareWatchDates(a, b, 'asc');
+    }
+    return compareWatchDates(a, b, 'desc') || a.title.localeCompare(b.title, 'es');
+  });
 }
 
 async function api(path, options = {}) {
@@ -338,21 +394,33 @@ function SearchPanel({ onSelect }) {
   );
 }
 
-function WatchCard({ watch, onOpen, onRemove, onRefresh }) {
+function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite }) {
   const delta = formatDelta(watch);
+  const lastChangeLabel = formatDateTime(getWatchLastChange(watch));
   return (
-    <article className="watch-card">
+    <article className={`watch-card${watch.isFavorite ? ' is-favorite' : ''}`}>
       <button type="button" className="watch-main" onClick={() => onOpen(watch)}>
         <ProductThumb key={watch.id} imageUrl={watch.imageUrl} size={64} />
         <div className="watch-copy">
-          <h3>{watch.title}</h3>
+          <div className="watch-title-row">
+            <h3>{watch.title}</h3>
+            {watch.isFavorite ? <span className="favorite-pill">Favorito</span> : null}
+          </div>
           <p className="meta">{watch.variantLabel ?? watch.cexBoxId}</p>
+          {lastChangeLabel ? <p className="meta">Último cambio: {lastChangeLabel}</p> : null}
           <p className="price">{formatPrice(watch.latestPrice?.sellPrice)}</p>
           <StoreAvailabilitySummary availability={watch.availability} compact />
           <span className={`badge ${delta.className}`}>{delta.label}</span>
         </div>
       </button>
       <div className="watch-actions">
+        <button
+          type="button"
+          className={`btn ghost favorite-action${watch.isFavorite ? ' is-active' : ''}`}
+          onClick={() => onToggleFavorite(watch)}
+        >
+          {watch.isFavorite ? 'Quitar favorito' : 'Marcar favorito'}
+        </button>
         <button type="button" className="btn ghost" onClick={() => onRefresh(watch.id)}>
           Actualizar
         </button>
@@ -498,11 +566,14 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pulling, setPulling] = useState(false);
+  const [watchSort, setWatchSort] = useState(WATCH_SORT_OPTIONS.FAVORITES);
 
   const loadWatches = useCallback(async () => {
     const payload = await api('/api/watches');
     setWatches(payload.watches ?? []);
   }, []);
+
+  const sortedWatches = useMemo(() => sortWatches(watches, watchSort), [watches, watchSort]);
 
   useEffect(() => {
     let active = true;
@@ -596,6 +667,19 @@ export default function App() {
     }
   }
 
+  async function handleToggleFavorite(watch) {
+    try {
+      await api(`/api/watches/${watch.id}/favorite`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isFavorite: !watch.isFavorite }),
+      });
+      await loadWatches();
+      setMessage(watch.isFavorite ? 'Quitado de favoritos.' : 'Añadido a favoritos.');
+    } catch (favoriteError) {
+      setError(favoriteError.message);
+    }
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -615,19 +699,34 @@ export default function App() {
             {watches.length === 0 ? (
               <p className="muted">No vigilas ningún listado. Busca un modelo para empezar.</p>
             ) : (
-              <div className="watch-grid">
-                {watches.map((watch) => (
-                  <WatchCard
-                    key={watch.id}
-                    watch={watch}
-                    onOpen={(w) => {
-                      setSelectedId(w.id);
-                      setView(VIEWS.DETAIL);
-                    }}
-                    onRemove={handleRemove}
-                    onRefresh={handleRefresh}
-                  />
-                ))}
+              <div className="watch-list-block">
+                <div className="filters watch-filters">
+                  <label>
+                    Ordenar
+                    <select value={watchSort} onChange={(event) => setWatchSort(event.target.value)}>
+                      <option value={WATCH_SORT_OPTIONS.FAVORITES}>Favoritos</option>
+                      <option value={WATCH_SORT_OPTIONS.PRICE_ASC}>Precio: menor a mayor</option>
+                      <option value={WATCH_SORT_OPTIONS.PRICE_DESC}>Precio: mayor a menor</option>
+                      <option value={WATCH_SORT_OPTIONS.LAST_CHANGE_DESC}>Último cambio: reciente primero</option>
+                      <option value={WATCH_SORT_OPTIONS.LAST_CHANGE_ASC}>Último cambio: antiguo primero</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="watch-grid">
+                  {sortedWatches.map((watch) => (
+                    <WatchCard
+                      key={watch.id}
+                      watch={watch}
+                      onOpen={(w) => {
+                        setSelectedId(w.id);
+                        setView(VIEWS.DETAIL);
+                      }}
+                      onRemove={handleRemove}
+                      onRefresh={handleRefresh}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </section>

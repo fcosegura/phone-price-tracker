@@ -47,6 +47,7 @@ npm run dev        # terminal 2 — Vite en :5173 (proxy /api)
 | DELETE | `/api/watches/:id` | Quitar seguimiento |
 | GET | `/api/watches/:id/history` | Historial precio y tiendas |
 | POST | `/api/watches/:id/refresh` | Refresco manual |
+| PATCH | `/api/watches/:id/favorite` | Marcar o desmarcar favorito |
 
 La cookie `cex_tracker_scope` identifica tu lista en este navegador.
 
