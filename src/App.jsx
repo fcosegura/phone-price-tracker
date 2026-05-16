@@ -945,7 +945,7 @@ export default function App() {
         ) : null}
       </main>
 
-      <nav className="bottom-nav bottom-nav-three">
+      <nav className="bottom-nav">
         <button
           type="button"
           className={view === VIEWS.HOME ? 'active' : ''}
