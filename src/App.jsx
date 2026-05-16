@@ -100,30 +100,19 @@ function Icon({ name, className = '', filled = false }) {
     ),
     gift: (
       <>
+        <path d="M5.25 7.5h13.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M7.5 7.5v12.75" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M16.5 7.5v12.75" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M12 7.5v12.75" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
         <path
-          d="M12 8.25v11.25M8.25 11.25h7.5M6.75 8.25h10.5c.6 0 1.05-.45 1.05-1.05v-1.2c0-.6-.45-1.05-1.05-1.05H6.75c-.6 0-1.05.45-1.05 1.05v1.2c0 .6.45 1.05 1.05 1.05Z"
+          d="M12 7.5a3.25 3.25 0 0 0 3.25-3.25c0 1.65-3.25 3.25-3.25 3.25a3.25 3.25 0 0 1-3.25-3.25c0 1.65 3.25 3.25 3.25 3.25Z"
           stroke="currentColor"
           strokeWidth="1.7"
           strokeLinecap="round"
           strokeLinejoin="round"
-        />
-        <path
-          d="M9.75 5.25c0-1.2 1.05-2.1 2.25-2.1s2.25.9 2.25 2.1M9.75 5.25H6.9c-.75 0-1.35.6-1.35 1.35v1.2M14.25 5.25h2.85c.75 0 1.35.6 1.35 1.35v1.2"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          fill={filled ? 'currentColor' : 'none'}
         />
       </>
-    ),
-    cake: (
-      <path
-        d="M6 14.25h12M8.25 10.5c0-1.2.9-2.1 2.1-2.1h3.3c1.2 0 2.1.9 2.1 2.1M7.5 14.25V11.1M12 14.25V10.35M16.5 14.25V11.1M5.25 14.25v2.25c0 .45.3.75.75.75h12c.45 0 .75-.3.75-.75v-2.25"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     ),
   };
 
@@ -549,7 +538,7 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite, onTog
             aria-label={isInWishlist ? 'Quitar de deseos' : 'Añadir a deseos de cumpleaños'}
             onClick={() => onToggleWish(watch)}
           >
-            <Icon name="gift" />
+            <Icon name="gift" filled={isInWishlist} />
           </button>
         </div>
         <button
@@ -677,7 +666,7 @@ function DetailView({ watchId, onBack, watch, onToggleWish, isInWishlist }) {
             className={`btn secondary block wish-toggle-detail${isInWishlist ? ' is-active' : ''}`}
             onClick={() => onToggleWish(watch)}
           >
-            <Icon name="gift" />
+            <Icon name="gift" filled={isInWishlist} />
             {isInWishlist ? 'Quitar de deseos de cumpleaños' : 'Añadir a deseos de cumpleaños'}
           </button>
         ) : null}
@@ -974,7 +963,7 @@ export default function App() {
             loadWatches().catch(() => {});
           }}
         >
-          <Icon name="cake" />
+          <Icon name="gift" />
           <span>Cumpleaños</span>
         </button>
       </nav>
