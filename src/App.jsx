@@ -5,6 +5,100 @@ const VIEWS = {
   WATCHES: 'watches',
   DETAIL: 'detail',
 };
+
+function Icon({ name, className = '', filled = false }) {
+  const commonProps = {
+    className: `icon${className ? ` ${className}` : ''}`,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    xmlns: 'http://www.w3.org/2000/svg',
+    'aria-hidden': 'true',
+  };
+
+  if (name === 'heart') {
+    return (
+      <svg {...commonProps} fill={filled ? 'currentColor' : 'none'}>
+        <path
+          d="M20.25 8.75c0 5.25-8.25 9.75-8.25 9.75S3.75 14 3.75 8.75A4.25 4.25 0 0 1 11.2 6a.99.99 0 0 0 1.6 0 4.25 4.25 0 0 1 7.45 2.75Z"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  const paths = {
+    bell: (
+      <>
+        <path
+          d="M18.25 9.9c0-3.45-2.35-6.15-6.25-6.15S5.75 6.45 5.75 9.9c0 5.35-2 5.8-2 5.8h16.5s-2-.45-2-5.8Z"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M9.75 18.25a2.35 2.35 0 0 0 4.5 0"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+        />
+      </>
+    ),
+    list: (
+      <>
+        <path d="M8 7h11M8 12h11M8 17h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M4.5 7h.01M4.5 12h.01M4.5 17h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </>
+    ),
+    refresh: (
+      <>
+        <path
+          d="M19 7.75v4.5h-4.5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M18.1 12.25A6.25 6.25 0 1 1 16 7.6L19 10.5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    ),
+    search: (
+      <>
+        <path
+          d="M10.75 18.25a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        />
+        <path d="m16.15 16.15 4.1 4.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4.75 6.75h14.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path
+          d="M9.75 6.75V5.4c0-.9.7-1.65 1.6-1.65h1.3c.9 0 1.6.75 1.6 1.65v1.35M17.25 6.75l-.75 12.1a1.55 1.55 0 0 1-1.55 1.4h-5.9a1.55 1.55 0 0 1-1.55-1.4l-.75-12.1"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path d="M10 10.75v5.5M14 10.75v5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </>
+    ),
+  };
+
+  return <svg {...commonProps}>{paths[name]}</svg>;
+}
+
 const SEARCH_RESULT_LIMIT = 250;
 const WATCH_SORT_OPTIONS = {
   FAVORITES: 'favorites',
@@ -399,35 +493,48 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite }) {
   const lastChangeLabel = formatDateTime(getWatchLastChange(watch));
   return (
     <article className={`watch-card${watch.isFavorite ? ' is-favorite' : ''}`}>
-      <button type="button" className="watch-main" onClick={() => onOpen(watch)}>
-        <ProductThumb key={watch.id} imageUrl={watch.imageUrl} size={64} />
-        <div className="watch-copy">
-          <div className="watch-title-row">
-            <h3>{watch.title}</h3>
-            {watch.isFavorite ? <span className="favorite-pill">Favorito</span> : null}
-          </div>
-          <p className="meta">{watch.variantLabel ?? watch.cexBoxId}</p>
-          {lastChangeLabel ? <p className="meta">Último cambio: {lastChangeLabel}</p> : null}
-          <p className="price">{formatPrice(watch.latestPrice?.sellPrice)}</p>
-          <StoreAvailabilitySummary availability={watch.availability} compact />
-          <span className={`badge ${delta.className}`}>{delta.label}</span>
-        </div>
+      <button
+        type="button"
+        className="icon-button remove-watch"
+        aria-label={`Quitar ${watch.title}`}
+        onClick={() => onRemove(watch.id)}
+      >
+        <Icon name="trash" />
       </button>
-      <div className="watch-actions">
+      <div className="watch-card-content">
+        <div className="watch-thumb-wrap">
+          <ProductThumb key={watch.id} imageUrl={watch.imageUrl} size={76} />
+          <button
+            type="button"
+            className={`favorite-icon-button${watch.isFavorite ? ' is-active' : ''}`}
+            aria-label={watch.isFavorite ? 'Quitar favorito' : 'Marcar favorito'}
+            onClick={() => onToggleFavorite(watch)}
+          >
+            <Icon name="heart" filled={watch.isFavorite} />
+          </button>
+        </div>
         <button
           type="button"
-          className={`btn ghost favorite-action${watch.isFavorite ? ' is-active' : ''}`}
-          onClick={() => onToggleFavorite(watch)}
+          className="watch-main"
+          aria-label={`Abrir detalle de ${watch.title}`}
+          onClick={() => onOpen(watch)}
         >
-          {watch.isFavorite ? 'Quitar favorito' : 'Marcar favorito'}
-        </button>
-        <button type="button" className="btn ghost" onClick={() => onRefresh(watch.id)}>
-          Actualizar
-        </button>
-        <button type="button" className="btn ghost danger" onClick={() => onRemove(watch.id)}>
-          Quitar
+          <div className="watch-copy">
+            <h3>{watch.title}</h3>
+            {watch.variantLabel ? <p className="watch-variant">{watch.variantLabel}</p> : null}
+            <p className="price">{formatPrice(watch.latestPrice?.sellPrice)}</p>
+            <div className="watch-status-line">
+              <span className={`badge ${delta.className}`}>{delta.label}</span>
+              {lastChangeLabel ? <span className="last-change">Último cambio: {lastChangeLabel}</span> : null}
+            </div>
+            <StoreAvailabilitySummary availability={watch.availability} compact />
+          </div>
         </button>
       </div>
+      <button type="button" className="btn primary refresh-action" onClick={() => onRefresh(watch.id)}>
+        <Icon name="refresh" />
+        Actualizar
+      </button>
     </article>
   );
 }
@@ -683,8 +790,13 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>CeX Tracker</h1>
-        <p className="subtitle">Precios y stock en CeX España</p>
+        <div>
+          <h1>CeX Tracker</h1>
+          <p className="subtitle">Precios y stock en CeX España</p>
+        </div>
+        <button type="button" className="notification-button" aria-label="Notificaciones">
+          <Icon name="bell" />
+        </button>
       </header>
 
       {pulling ? <p className="pull-hint">Actualizando…</p> : null}
@@ -695,7 +807,7 @@ export default function App() {
         {view === VIEWS.HOME ? <SearchPanel onSelect={handleAddWatch} /> : null}
         {view === VIEWS.WATCHES ? (
           <section className="panel">
-            <h2>Mis móviles ({watches.length})</h2>
+            <h2>Mis seguimientos ({watches.length})</h2>
             {watches.length === 0 ? (
               <p className="muted">No vigilas ningún listado. Busca un modelo para empezar.</p>
             ) : (
@@ -748,7 +860,8 @@ export default function App() {
           className={view === VIEWS.HOME ? 'active' : ''}
           onClick={() => setView(VIEWS.HOME)}
         >
-          Buscar
+          <Icon name="search" />
+          <span>Buscar</span>
         </button>
         <button
           type="button"
@@ -758,7 +871,8 @@ export default function App() {
             setSelectedId(null);
           }}
         >
-          Mis móviles
+          <Icon name="list" />
+          <span>Mis seguimientos</span>
         </button>
       </nav>
     </div>
