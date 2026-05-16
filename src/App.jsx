@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import BdPlannerApp from './bdplanner/BdPlannerApp.jsx';
+import { loadGifts } from './bdplanner/storage.js';
+import { isWatchInWishlist, persistGifts, toggleWishFromWatch } from './bdplanner/wishList.js';
 
 const VIEWS = {
   HOME: 'home',
   WATCHES: 'watches',
   DETAIL: 'detail',
+  BIRTHDAY: 'birthday',
 };
 
 function Icon({ name, className = '', filled = false }) {
@@ -93,6 +97,33 @@ function Icon({ name, className = '', filled = false }) {
         />
         <path d="M10 10.75v5.5M14 10.75v5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       </>
+    ),
+    gift: (
+      <>
+        <path
+          d="M12 8.25v11.25M8.25 11.25h7.5M6.75 8.25h10.5c.6 0 1.05-.45 1.05-1.05v-1.2c0-.6-.45-1.05-1.05-1.05H6.75c-.6 0-1.05.45-1.05 1.05v1.2c0 .6.45 1.05 1.05 1.05Z"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M9.75 5.25c0-1.2 1.05-2.1 2.25-2.1s2.25.9 2.25 2.1M9.75 5.25H6.9c-.75 0-1.35.6-1.35 1.35v1.2M14.25 5.25h2.85c.75 0 1.35.6 1.35 1.35v1.2"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    ),
+    cake: (
+      <path
+        d="M6 14.25h12M8.25 10.5c0-1.2.9-2.1 2.1-2.1h3.3c1.2 0 2.1.9 2.1 2.1M7.5 14.25V11.1M12 14.25V10.35M16.5 14.25V11.1M5.25 14.25v2.25c0 .45.3.75.75.75h12c.45 0 .75-.3.75-.75v-2.25"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     ),
   };
 
@@ -488,7 +519,7 @@ function SearchPanel({ onSelect }) {
   );
 }
 
-function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite }) {
+function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite, onToggleWish, isInWishlist }) {
   const delta = formatDelta(watch);
   const lastChangeLabel = formatDateTime(getWatchLastChange(watch));
   return (
@@ -511,6 +542,14 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite }) {
             onClick={() => onToggleFavorite(watch)}
           >
             <Icon name="heart" filled={watch.isFavorite} />
+          </button>
+          <button
+            type="button"
+            className={`wish-icon-button${isInWishlist ? ' is-active' : ''}`}
+            aria-label={isInWishlist ? 'Quitar de deseos' : 'Añadir a deseos de cumpleaños'}
+            onClick={() => onToggleWish(watch)}
+          >
+            <Icon name="gift" />
           </button>
         </div>
         <button
@@ -539,7 +578,7 @@ function WatchCard({ watch, onOpen, onRemove, onRefresh, onToggleFavorite }) {
   );
 }
 
-function DetailView({ watchId, onBack }) {
+function DetailView({ watchId, onBack, watch, onToggleWish, isInWishlist }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -628,9 +667,21 @@ function DetailView({ watchId, onBack }) {
           {lastCheckedLabel ? <span className="badge-note">Último check: {lastCheckedLabel}</span> : null}
         </span>
       )}
-      <button type="button" className="btn primary block" onClick={handleRefresh}>
-        Actualizar ahora
-      </button>
+      <div className="detail-actions">
+        <button type="button" className="btn primary block" onClick={handleRefresh}>
+          Actualizar ahora
+        </button>
+        {watch ? (
+          <button
+            type="button"
+            className={`btn secondary block wish-toggle-detail${isInWishlist ? ' is-active' : ''}`}
+            onClick={() => onToggleWish(watch)}
+          >
+            <Icon name="gift" />
+            {isInWishlist ? 'Quitar de deseos de cumpleaños' : 'Añadir a deseos de cumpleaños'}
+          </button>
+        ) : null}
+      </div>
       <h3>Historial de precio</h3>
       <PriceChart prices={data.prices} />
       <ul className="history-list">
@@ -669,6 +720,7 @@ function DetailView({ watchId, onBack }) {
 export default function App() {
   const [view, setView] = useState(VIEWS.HOME);
   const [watches, setWatches] = useState([]);
+  const [gifts, setGifts] = useState(() => loadGifts());
   const [selectedId, setSelectedId] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -787,12 +839,38 @@ export default function App() {
     }
   }
 
+  function handleToggleWish(watch) {
+    const wasInList = isWatchInWishlist(gifts, watch);
+    const next = persistGifts(toggleWishFromWatch(gifts, watch));
+    setGifts(next);
+    setMessage(wasInList ? 'Quitado de deseos de cumpleaños.' : 'Añadido a deseos de cumpleaños.');
+  }
+
+  const selectedWatch = useMemo(
+    () => watches.find((watch) => watch.id === selectedId) ?? null,
+    [watches, selectedId],
+  );
+
+  const headerCopy = useMemo(() => {
+    if (view === VIEWS.BIRTHDAY) {
+      return { title: 'BD Planner', subtitle: 'Cuenta atrás y deseos' };
+    }
+    if (view === VIEWS.WATCHES || view === VIEWS.DETAIL) {
+      return { title: 'CeX Tracker', subtitle: 'Precios y stock en CeX España' };
+    }
+    return { title: 'CeX Tracker', subtitle: 'Precios y stock en CeX España' };
+  }, [view]);
+
+  function renderGiftThumb(imageUrl) {
+    return <ProductThumb imageUrl={imageUrl} size={48} />;
+  }
+
   return (
     <div className="app">
       <header className="header">
         <div>
-          <h1>CeX Tracker</h1>
-          <p className="subtitle">Precios y stock en CeX España</p>
+          <h1>{headerCopy.title}</h1>
+          <p className="subtitle">{headerCopy.subtitle}</p>
         </div>
         <button type="button" className="notification-button" aria-label="Notificaciones">
           <Icon name="bell" />
@@ -836,6 +914,8 @@ export default function App() {
                       onRemove={handleRemove}
                       onRefresh={handleRefresh}
                       onToggleFavorite={handleToggleFavorite}
+                      onToggleWish={handleToggleWish}
+                      isInWishlist={isWatchInWishlist(gifts, watch)}
                     />
                   ))}
                 </div>
@@ -846,15 +926,26 @@ export default function App() {
         {view === VIEWS.DETAIL && selectedId ? (
           <DetailView
             watchId={selectedId}
+            watch={selectedWatch}
+            isInWishlist={selectedWatch ? isWatchInWishlist(gifts, selectedWatch) : false}
+            onToggleWish={handleToggleWish}
             onBack={() => {
               setView(VIEWS.WATCHES);
               loadWatches().catch(() => {});
             }}
           />
         ) : null}
+        {view === VIEWS.BIRTHDAY ? (
+          <BdPlannerApp
+            watches={watches}
+            gifts={gifts}
+            onGiftsChange={setGifts}
+            formatThumb={renderGiftThumb}
+          />
+        ) : null}
       </main>
 
-      <nav className="bottom-nav">
+      <nav className="bottom-nav bottom-nav-three">
         <button
           type="button"
           className={view === VIEWS.HOME ? 'active' : ''}
@@ -872,7 +963,19 @@ export default function App() {
           }}
         >
           <Icon name="list" />
-          <span>Mis seguimientos</span>
+          <span>Seguimientos</span>
+        </button>
+        <button
+          type="button"
+          className={view === VIEWS.BIRTHDAY ? 'active' : ''}
+          onClick={() => {
+            setView(VIEWS.BIRTHDAY);
+            setSelectedId(null);
+            loadWatches().catch(() => {});
+          }}
+        >
+          <Icon name="cake" />
+          <span>Cumpleaños</span>
         </button>
       </nav>
     </div>

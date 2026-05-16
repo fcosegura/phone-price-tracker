@@ -1,7 +1,7 @@
 {
-  "name": "CeX Price Tracker",
-  "short_name": "CeX Tracker",
-  "description": "Rastrea precios y disponibilidad de móviles en CeX España.",
+  "name": "CeX Tracker + BD Planner",
+  "short_name": "CeX + BD",
+  "description": "Rastrea precios CeX y planifica deseos de cumpleaños.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

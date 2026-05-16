@@ -24,7 +24,7 @@
     "crons": ["0 */6 * * *"]
   },
   "vars": {
-    "APP_NAME": "CeX Price Tracker",
+    "APP_NAME": "CeX Tracker + BD Planner",
     "CEX_COUNTRY": "es",
     "MAX_WATCHES_PER_SCOPE": "20"
   }
