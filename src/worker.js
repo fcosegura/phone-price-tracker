@@ -7,6 +7,7 @@ import {
   listWatches,
   pollAllActiveWatches,
   refreshWatch,
+  updateWatchFavorite,
 } from './api/watches.js';
 import { ensureSchema } from './db/schema.js';
 
@@ -147,7 +148,7 @@ async function handleApiRequest(request, env, url, scopeId) {
     }
   }
 
-  const watchMatch = url.pathname.match(/^\/api\/watches\/([^/]+)(?:\/(history|refresh))?$/);
+  const watchMatch = url.pathname.match(/^\/api\/watches\/([^/]+)(?:\/(history|refresh|favorite))?$/);
   if (watchMatch) {
     const deviceId = watchMatch[1];
     const action = watchMatch[2];
@@ -166,6 +167,18 @@ async function handleApiRequest(request, env, url, scopeId) {
         return jsonResponse({ error: 'Seguimiento no encontrado.' }, 404);
       }
       return jsonResponse(result);
+    }
+
+    if (action === 'favorite' && request.method === 'PATCH') {
+      const body = await readJsonBody(request);
+      if (typeof body.isFavorite !== 'boolean') {
+        return jsonResponse({ error: 'isFavorite debe ser booleano.' }, 400);
+      }
+      const watch = await updateWatchFavorite(env, scopeId, deviceId, body.isFavorite);
+      if (!watch) {
+        return jsonResponse({ error: 'Seguimiento no encontrado.' }, 404);
+      }
+      return jsonResponse({ watch });
     }
 
     if (!action && request.method === 'DELETE') {

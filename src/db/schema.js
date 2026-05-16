@@ -10,6 +10,7 @@ export const TABLE_BOOTSTRAP_STATEMENTS = [
     storage_gb INTEGER,
     color TEXT,
     variant_label TEXT,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -47,6 +48,13 @@ export function ensureSchema(env) {
     schemaReadyPromise = (async () => {
       for (const statement of TABLE_BOOTSTRAP_STATEMENTS) {
         await env.DB.prepare(statement).run();
+      }
+      const columns = await env.DB.prepare('PRAGMA table_info(tracked_devices)').all();
+      const columnNames = new Set((columns.results ?? []).map((column) => column.name));
+      if (!columnNames.has('is_favorite')) {
+        await env.DB.prepare(
+          'ALTER TABLE tracked_devices ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0',
+        ).run();
       }
     })();
   }

@@ -19,10 +19,12 @@ function rowToWatch(row) {
     storageGb: row.storage_gb,
     color: row.color,
     variantLabel: row.variant_label,
+    isFavorite: Boolean(row.is_favorite),
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastCheckedAt: row.updated_at,
+    lastChangeAt: latestTimestamp(row.latest_price_at, row.latest_availability_at, row.created_at),
     latestPrice: row.latest_sell_price != null ? { sellPrice: row.latest_sell_price, recordedAt: row.latest_price_at } : null,
     priceChange:
       row.latest_sell_price != null && row.prev_sell_price != null
@@ -35,6 +37,12 @@ function rowToWatch(row) {
           }
         : null,
   };
+}
+
+function latestTimestamp(...values) {
+  return values
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
 }
 
 async function getLatestAvailabilityMap(env, deviceIds) {
@@ -107,10 +115,11 @@ export async function listWatches(env, scopeId) {
     `SELECT d.*,
       (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_sell_price,
       (SELECT recorded_at FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_price_at,
+      (SELECT recorded_at FROM availability_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1) AS latest_availability_at,
       (SELECT sell_price FROM price_snapshots WHERE device_id = d.id ORDER BY recorded_at DESC LIMIT 1 OFFSET 1) AS prev_sell_price
     FROM tracked_devices d
     WHERE d.scope_id = ?1 AND d.is_active = 1
-    ORDER BY d.updated_at DESC`,
+    ORDER BY d.is_favorite DESC, d.updated_at DESC`,
   )
     .bind(scopeId)
     .all();
@@ -221,6 +230,20 @@ export async function deleteWatch(env, scopeId, deviceId) {
     .run();
 
   return Number(result.meta?.changes ?? 0) > 0;
+}
+
+export async function updateWatchFavorite(env, scopeId, deviceId, isFavorite) {
+  const result = await env.DB.prepare(
+    'UPDATE tracked_devices SET is_favorite = ?3 WHERE id = ?1 AND scope_id = ?2 AND is_active = 1',
+  )
+    .bind(deviceId, scopeId, isFavorite ? 1 : 0)
+    .run();
+
+  if (Number(result.meta?.changes ?? 0) === 0) {
+    return null;
+  }
+
+  return getWatch(env, scopeId, deviceId);
 }
 
 async function getLatestPriceSnapshot(env, deviceId) {

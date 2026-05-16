@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS tracked_devices (
   storage_gb INTEGER,
   color TEXT,
   variant_label TEXT,
+  is_favorite INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
