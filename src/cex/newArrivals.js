@@ -10,9 +10,13 @@ import {
 
 export const ALLOWED_NEW_ARRIVAL_DAYS = [1, 3, 5];
 
+/** SKUs con menos de este antigüedad pueden contar como novedad en tienda vía timestamp. */
+const MAX_SKU_AGE_MS = 120 * 24 * 60 * 60 * 1000;
+
 const DISCOVERY_QUERIES = [
   'iphone',
   'samsung',
+  'galaxy',
   'xiaomi',
   'pixel',
   'motorola',
@@ -21,7 +25,7 @@ const DISCOVERY_QUERIES = [
   'huawei',
   'oneplus',
   'nokia',
-  'galaxy',
+  'redmi',
   'playstation',
   'xbox',
   'nintendo',
@@ -30,6 +34,11 @@ const DISCOVERY_QUERIES = [
   'tablet',
   'macbook',
   'auricular',
+  'watch',
+  'fitbit',
+  'garmin',
+  'lenovo',
+  'juego',
   'fundas',
   'cable',
   'mando',
@@ -37,11 +46,11 @@ const DISCOVERY_QUERIES = [
 
 const PAGES_PER_QUERY = 2;
 const HITS_PER_PAGE = 100;
-const MAX_STOCK_CHECKS = 48;
 const MAX_RESULTS = 50;
+const MAX_NON_HINT_CHECKS = 40;
 const STOCK_CHECK_CONCURRENCY = 10;
 
-export function parseFirstStockInDate(value) {
+export function parseCatalogDate(value) {
   if (value == null || value === '') {
     return null;
   }
@@ -52,6 +61,9 @@ export function parseFirstStockInDate(value) {
   }
   return parsed;
 }
+
+/** @deprecated use parseCatalogDate */
+export const parseFirstStockInDate = parseCatalogDate;
 
 export function normalizeNewArrivalDays(days) {
   const parsed = Number.parseInt(days ?? 3, 10);
@@ -64,6 +76,39 @@ function hitHasMalagaStoreHint(hit) {
     ...(Array.isArray(hit?.stores) ? hit.stores : []),
   ];
   return storeNames.some((name) => isMalagaStore(name));
+}
+
+/**
+ * Determina si un hit entra en la ventana de novedad.
+ * - catalog: firstStockInDate reciente (alta nueva en CeX)
+ * - malaga-stock: SKU relativamente nuevo con actividad reciente en índice (suele coincidir con stock en tienda)
+ */
+export function getNewArrivalMatch(hit, cutoffMs) {
+  const firstStock = parseCatalogDate(hit.firstStockInDate ?? hit.firstStockDate);
+  const updated = parseCatalogDate(hit.timestamp);
+  if (!firstStock) {
+    return null;
+  }
+
+  const firstStockMs = firstStock.getTime();
+  if (firstStockMs >= cutoffMs) {
+    return {
+      kind: 'catalog',
+      sortAt: firstStockMs,
+      displayDate: hit.firstStockInDate ?? hit.firstStockDate ?? null,
+    };
+  }
+
+  if (updated && updated.getTime() >= cutoffMs && Date.now() - firstStockMs <= MAX_SKU_AGE_MS) {
+    return {
+      kind: 'malaga-stock',
+      sortAt: updated.getTime(),
+      displayDate: hit.timestamp ?? null,
+      catalogDate: hit.firstStockInDate ?? hit.firstStockDate ?? null,
+    };
+  }
+
+  return null;
 }
 
 function mapHitToCandidate(hit) {
@@ -87,7 +132,6 @@ async function discoverRecentHits(config, cutoffMs) {
           hitsPerPage: HITS_PER_PAGE,
           page,
           config,
-          filters: 'inStockStore=1',
         }),
       ),
     );
@@ -99,14 +143,14 @@ async function discoverRecentHits(config, cutoffMs) {
         if (!boxId || seenBoxIds.has(boxId)) {
           continue;
         }
-        const firstStockAt = parseFirstStockInDate(hit.firstStockInDate ?? hit.firstStockDate);
-        if (!firstStockAt || firstStockAt.getTime() < cutoffMs) {
+        const match = getNewArrivalMatch(hit, cutoffMs);
+        if (!match) {
           continue;
         }
         seenBoxIds.add(boxId);
         candidates.push({
           hit,
-          firstStockAt,
+          match,
           malagaHint: hitHasMalagaStoreHint(hit),
         });
       }
@@ -117,13 +161,17 @@ async function discoverRecentHits(config, cutoffMs) {
 }
 
 async function enrichMalagaCandidates(candidates, country) {
-  const ordered = [
-    ...candidates.filter((entry) => entry.malagaHint),
-    ...candidates.filter((entry) => !entry.malagaHint),
-  ].slice(0, MAX_STOCK_CHECKS);
+  const hinted = candidates.filter((entry) => entry.malagaHint);
+  const others = candidates.filter((entry) => !entry.malagaHint).slice(0, MAX_NON_HINT_CHECKS);
+  const ordered = [...hinted, ...others];
 
   const results = [];
+  let withoutMalagaStock = 0;
+
   for (let index = 0; index < ordered.length; index += STOCK_CHECK_CONCURRENCY) {
+    if (results.length >= MAX_RESULTS) {
+      break;
+    }
     const chunk = ordered.slice(index, index + STOCK_CHECK_CONCURRENCY);
     const enriched = await Promise.all(
       chunk.map(async (entry) => {
@@ -131,12 +179,18 @@ async function enrichMalagaCandidates(candidates, country) {
         if (!product.availability?.hasMalagaPickup) {
           product = await enrichBoxWithStoreStock(product, country);
         }
+
         if (!product.availability?.hasMalagaPickup) {
+          withoutMalagaStock += 1;
           return null;
         }
+
         return {
           ...product,
           firstStockInDate: entry.hit.firstStockInDate ?? entry.hit.firstStockDate ?? null,
+          arrivalKind: entry.match.kind,
+          arrivalDate: entry.match.displayDate,
+          catalogListedAt: entry.match.catalogDate ?? entry.hit.firstStockInDate ?? null,
         };
       }),
     );
@@ -148,11 +202,20 @@ async function enrichMalagaCandidates(candidates, country) {
     }
   }
 
-  return results.sort((a, b) => {
-    const aTime = parseFirstStockInDate(a.firstStockInDate)?.getTime() ?? 0;
-    const bTime = parseFirstStockInDate(b.firstStockInDate)?.getTime() ?? 0;
-    return bTime - aTime;
-  });
+  return {
+    results: results.sort((a, b) => {
+      const aTime =
+        parseCatalogDate(a.arrivalDate)?.getTime() ??
+        parseCatalogDate(a.firstStockInDate)?.getTime() ??
+        0;
+      const bTime =
+        parseCatalogDate(b.arrivalDate)?.getTime() ??
+        parseCatalogDate(b.firstStockInDate)?.getTime() ??
+        0;
+      return bTime - aTime;
+    }),
+    withoutMalagaStock,
+  };
 }
 
 export async function fetchNewArrivalsMalaga({ days = 3, country = 'es' } = {}) {
@@ -160,13 +223,14 @@ export async function fetchNewArrivalsMalaga({ days = 3, country = 'es' } = {}) 
   const cutoffMs = Date.now() - rangeDays * 24 * 60 * 60 * 1000;
   const config = await getCexSearchConfig(country);
   const { candidates, scannedBoxIds } = await discoverRecentHits(config, cutoffMs);
-  const results = await enrichMalagaCandidates(candidates, country);
+  const { results, withoutMalagaStock } = await enrichMalagaCandidates(candidates, country);
 
   return {
     days: rangeDays,
     results,
     returned: results.length,
     candidatesInRange: candidates.length,
+    candidatesWithoutMalaga: withoutMalagaStock,
     scannedBoxIds,
     malagaOnly: true,
   };

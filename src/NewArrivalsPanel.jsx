@@ -84,6 +84,7 @@ export default function NewArrivalsPanel({ api, onSelect }) {
         setMeta({
           returned: payload.returned ?? payload.results?.length ?? 0,
           candidatesInRange: payload.candidatesInRange ?? 0,
+          candidatesWithoutMalaga: payload.candidatesWithoutMalaga ?? 0,
           scannedBoxIds: payload.scannedBoxIds ?? 0,
           days: payload.days ?? selectedDays,
         });
@@ -113,7 +114,8 @@ export default function NewArrivalsPanel({ api, onSelect }) {
     <section className="panel">
       <h2>Novedades en Málaga</h2>
       <p className="muted new-arrivals-intro">
-        Listados recién publicados en CeX en el rango elegido, con stock para recogida en tiendas de Málaga.
+        Listados con stock en Málaga dados de alta recientemente en CeX o con actividad reciente en tienda
+        (modelos nuevos en catálogo).
       </p>
 
       <div className="day-range-picker" role="group" aria-label="Rango de días">
@@ -137,8 +139,8 @@ export default function NewArrivalsPanel({ api, onSelect }) {
       {meta && !loading ? (
         <p className="result-summary">
           {meta.returned} listado{meta.returned === 1 ? '' : 's'} en Málaga
-          {meta.candidatesInRange > meta.returned
-            ? ` (${meta.candidatesInRange} nuevos en catálogo sin stock en Málaga)`
+          {meta.candidatesWithoutMalaga > 0
+            ? ` (${meta.candidatesWithoutMalaga} en catálogo sin stock en Málaga ahora)`
             : ''}
         </p>
       ) : null}
@@ -156,10 +158,19 @@ export default function NewArrivalsPanel({ api, onSelect }) {
             <div className="result-body">
               <h3>{item.title}</h3>
               <p className="meta">{item.variantLabel ?? 'Variante CeX'}</p>
-              {formatFirstStockDate(item.firstStockInDate) ? (
+              {formatFirstStockDate(item.arrivalDate ?? item.firstStockInDate) ? (
                 <p className="meta new-arrival-date">
-                  Alta en catálogo: {formatFirstStockDate(item.firstStockInDate)}
+                  {item.arrivalKind === 'malaga-stock'
+                    ? 'Actividad reciente en tienda'
+                    : 'Alta en catálogo'}
+                  : {formatFirstStockDate(item.arrivalDate ?? item.firstStockInDate)}
                 </p>
+              ) : null}
+              {item.arrivalKind === 'malaga-stock' &&
+              item.catalogListedAt &&
+              item.catalogListedAt !== item.arrivalDate &&
+              formatFirstStockDate(item.catalogListedAt) ? (
+                <p className="meta">En catálogo CeX desde {formatFirstStockDate(item.catalogListedAt)}</p>
               ) : null}
               <MalagaStoresSummary availability={item.availability} />
               <p className="price">{formatPrice(item.sellPrice)}</p>
