@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import BdPlannerApp from './bdplanner/BdPlannerApp.jsx';
+import NewArrivalsPanel from './NewArrivalsPanel.jsx';
 import { exportBackup, normalizeGift, saveBirthDate, saveGifts } from './bdplanner/storage.js';
 import { isWatchInWishlist, persistGifts, toggleWishFromWatch } from './bdplanner/wishList.js';
 
 const VIEWS = {
   HOME: 'home',
+  NEW_ARRIVALS: 'new-arrivals',
   WATCHES: 'watches',
   DETAIL: 'detail',
   BIRTHDAY: 'birthday',
@@ -119,6 +121,22 @@ function Icon({ name, className = '', filled = false }) {
         <rect x="3.5" y="5.5" width="7.5" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
         <rect x="13" y="5.5" width="7.5" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
         <path d="M7.25 17.25h.01M16.75 17.25h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+      </>
+    ),
+    sparkles: (
+      <>
+        <path
+          d="M12 3.5 13.2 8.8 18.5 10 13.2 11.2 12 16.5 10.8 11.2 5.5 10 10.8 8.8 12 3.5Z"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M18.75 4.25h.01M6.25 14.25h.01M19.25 15.75h.01"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
       </>
     ),
   };
@@ -1114,6 +1132,9 @@ export default function App() {
     if (view === VIEWS.BIRTHDAY) {
       return { title: 'BD Planner', subtitle: 'Cuenta atrás y deseos' };
     }
+    if (view === VIEWS.NEW_ARRIVALS) {
+      return { title: 'CeX Tracker', subtitle: 'Novedades con recogida en Málaga' };
+    }
     if (view === VIEWS.WATCHES || view === VIEWS.DETAIL) {
       return { title: 'CeX Tracker', subtitle: 'Precios y stock en CeX España' };
     }
@@ -1157,6 +1178,7 @@ export default function App() {
 
       <main className="main">
         {view === VIEWS.HOME ? <SearchPanel onSelect={handleAddWatch} /> : null}
+        {view === VIEWS.NEW_ARRIVALS ? <NewArrivalsPanel api={api} onSelect={handleAddWatch} /> : null}
         {view === VIEWS.WATCHES ? (
           <section className="panel">
             <h2>Mis seguimientos ({watches.length})</h2>
@@ -1226,10 +1248,24 @@ export default function App() {
         <button
           type="button"
           className={view === VIEWS.HOME ? 'active' : ''}
-          onClick={() => setView(VIEWS.HOME)}
+          onClick={() => {
+            setView(VIEWS.HOME);
+            setSelectedId(null);
+          }}
         >
           <Icon name="search" />
           <span>Buscar</span>
+        </button>
+        <button
+          type="button"
+          className={view === VIEWS.NEW_ARRIVALS ? 'active' : ''}
+          onClick={() => {
+            setView(VIEWS.NEW_ARRIVALS);
+            setSelectedId(null);
+          }}
+        >
+          <Icon name="sparkles" />
+          <span>Novedades</span>
         </button>
         <button
           type="button"
@@ -1240,7 +1276,7 @@ export default function App() {
           }}
         >
           <Icon name="list" />
-          <span>Seguimientos</span>
+          <span>Lista</span>
         </button>
         <button
           type="button"
@@ -1252,7 +1288,7 @@ export default function App() {
           }}
         >
           <Icon name="gift" />
-          <span>Cumpleaños</span>
+          <span>Cumple</span>
         </button>
       </nav>
     </div>
