@@ -45,6 +45,12 @@ export const TABLE_BOOTSTRAP_STATEMENTS = [
     revoked_at TEXT
   )`,
   'CREATE INDEX IF NOT EXISTS idx_scope_sync_tokens_scope ON scope_sync_tokens(scope_id)',
+  `CREATE TABLE IF NOT EXISTS scope_planner_data (
+    scope_id TEXT PRIMARY KEY,
+    birth_date TEXT,
+    gifts_json TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 let schemaReadyPromise;

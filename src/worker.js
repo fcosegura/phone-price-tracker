@@ -9,6 +9,7 @@ import {
   refreshWatch,
   updateWatchFavorite,
 } from './api/watches.js';
+import { getPlannerData, savePlannerData } from './api/planner.js';
 import { createSyncToken, linkScopeByCode, revokeSyncTokens } from './api/scope.js';
 import { ensureSchema } from './db/schema.js';
 
@@ -86,9 +87,9 @@ function getMaxWatches(env) {
   return Number.isFinite(parsed) ? parsed : 20;
 }
 
-async function readJsonBody(request) {
+async function readJsonBody(request, maxBytes = MAX_REQUEST_BYTES) {
   const text = await request.text();
-  if (text.length > MAX_REQUEST_BYTES) {
+  if (text.length > maxBytes) {
     throw Object.assign(new Error('Cuerpo de petición demasiado grande.'), { status: 413 });
   }
   if (!text) {
@@ -149,6 +150,21 @@ async function handleApiRequest(request, env, url, scopeId) {
   if (url.pathname === '/api/scope/share' && request.method === 'DELETE') {
     await revokeSyncTokens(env, scopeId);
     return jsonResponse({ revoked: true });
+  }
+
+  if (url.pathname === '/api/planner' && request.method === 'GET') {
+    const planner = await getPlannerData(env, scopeId);
+    return jsonResponse(planner);
+  }
+
+  if (url.pathname === '/api/planner' && request.method === 'PUT') {
+    const body = await readJsonBody(request, 64_000);
+    try {
+      const planner = await savePlannerData(env, scopeId, body);
+      return jsonResponse(planner);
+    } catch (error) {
+      return jsonResponse({ error: error.message }, error.status ?? 500);
+    }
   }
 
   if (url.pathname === '/api/scope/link' && request.method === 'POST') {

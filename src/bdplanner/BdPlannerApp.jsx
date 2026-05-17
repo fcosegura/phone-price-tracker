@@ -3,7 +3,6 @@ import CountdownView from './CountdownView.jsx';
 import GiftsView from './GiftsView.jsx';
 import SettingsView from './SettingsView.jsx';
 import { useBirthdayCountdown } from './useBirthdayCountdown.js';
-import { loadGifts } from './storage.js';
 import { persistGifts } from './wishList.js';
 
 const BD_VIEWS = {
@@ -12,9 +11,17 @@ const BD_VIEWS = {
   SETTINGS: 'settings',
 };
 
-export default function BdPlannerApp({ watches, gifts, onGiftsChange, formatThumb }) {
+export default function BdPlannerApp({
+  watches,
+  gifts,
+  birthDate,
+  onBirthDateChange,
+  onGiftsChange,
+  onPlannerImported,
+  formatThumb,
+}) {
   const [bdView, setBdView] = useState(BD_VIEWS.COUNTDOWN);
-  const { birthDate, setBirthDate, countdown } = useBirthdayCountdown();
+  const { countdown } = useBirthdayCountdown(birthDate);
 
   function handleGiftsUpdate(nextGifts) {
     const saved = persistGifts(nextGifts);
@@ -22,7 +29,7 @@ export default function BdPlannerApp({ watches, gifts, onGiftsChange, formatThum
   }
 
   function handleDataImported() {
-    onGiftsChange(loadGifts());
+    onPlannerImported?.();
   }
 
   const titles = {
@@ -55,7 +62,7 @@ export default function BdPlannerApp({ watches, gifts, onGiftsChange, formatThum
         <SettingsView
           key={birthDate || 'empty'}
           birthDate={birthDate}
-          onBirthDateChange={setBirthDate}
+          onBirthDateChange={onBirthDateChange}
           onDataImported={handleDataImported}
         />
       ) : null}
