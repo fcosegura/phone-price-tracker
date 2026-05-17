@@ -105,6 +105,94 @@ select {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
+.sync-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: end center;
+  padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  background: rgba(4, 10, 18, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.sync-panel {
+  width: min(100%, 440px);
+  max-height: min(88dvh, 720px);
+  overflow: auto;
+  margin: 0;
+}
+
+.sync-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sync-panel-header h2 {
+  margin: 0;
+}
+
+.sync-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.sync-intro {
+  margin: 0 0 14px;
+}
+
+.sync-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid color-mix(in srgb, var(--surface-3) 55%, transparent);
+}
+
+.sync-section h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.sync-code {
+  margin: 0 0 8px;
+  font-size: clamp(1.6rem, 6vw, 2rem);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--accent);
+}
+
+.sync-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.sync-link-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  color: var(--muted-strong);
+}
+
+.sync-link-field input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--surface-3) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  color: var(--text);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .main {
   display: flex;
   flex-direction: column;
