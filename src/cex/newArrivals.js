@@ -14,10 +14,10 @@ export const ALLOWED_NEW_ARRIVAL_DAYS = [1, 3, 5];
 const MAX_SKU_AGE_MS = 120 * 24 * 60 * 60 * 1000;
 
 /** Máximo de peticiones Algolia por invocación (límite Worker ~50 subrequests). */
-const MAX_ALGOLIA_REQUESTS = 8;
+const MAX_ALGOLIA_REQUESTS = 10;
 
 /** Máximo de comprobaciones de stock CeX por invocación. */
-const MAX_STOCK_REQUESTS = 10;
+const MAX_STOCK_REQUESTS = 12;
 
 const DISCOVERY_QUERIES = [
   'iphone',
@@ -28,6 +28,8 @@ const DISCOVERY_QUERIES = [
   'honor',
   'oppo',
   'playstation',
+  'nintendo',
+  'switch',
 ];
 
 const HITS_PER_PAGE = 80;
