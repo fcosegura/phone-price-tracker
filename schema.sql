@@ -45,3 +45,15 @@ CREATE TABLE IF NOT EXISTS availability_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_availability_device_time
   ON availability_snapshots(device_id, recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS scope_sync_tokens (
+  id TEXT PRIMARY KEY,
+  scope_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT,
+  revoked_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_scope_sync_tokens_scope
+  ON scope_sync_tokens(scope_id);

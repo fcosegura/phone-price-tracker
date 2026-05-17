@@ -114,6 +114,13 @@ function Icon({ name, className = '', filled = false }) {
         />
       </>
     ),
+    devices: (
+      <>
+        <rect x="3.5" y="5.5" width="7.5" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
+        <rect x="13" y="5.5" width="7.5" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
+        <path d="M7.25 17.25h.01M16.75 17.25h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+      </>
+    ),
   };
 
   return <svg {...commonProps}>{paths[name]}</svg>;
@@ -706,6 +713,163 @@ function DetailView({ watchId, onBack, watch, onToggleWish, isInWishlist }) {
   );
 }
 
+function SyncPanel({ open, onClose, onLinked, onMessage }) {
+  const [shareCode, setShareCode] = useState('');
+  const [shareExpiresAt, setShareExpiresAt] = useState('');
+  const [linkCode, setLinkCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [panelError, setPanelError] = useState('');
+
+  if (!open) {
+    return null;
+  }
+
+  async function handleGenerateCode() {
+    setPanelError('');
+    setLoading(true);
+    try {
+      const payload = await api('/api/scope/share', { method: 'POST', body: '{}' });
+      setShareCode(payload.code ?? '');
+      setShareExpiresAt(payload.expiresAt ?? '');
+    } catch (shareError) {
+      setPanelError(shareError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRevokeCode() {
+    setPanelError('');
+    setLoading(true);
+    try {
+      await api('/api/scope/share', { method: 'DELETE' });
+      setShareCode('');
+      setShareExpiresAt('');
+    } catch (revokeError) {
+      setPanelError(revokeError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLink() {
+    setPanelError('');
+    setLoading(true);
+    try {
+      await api('/api/scope/link', {
+        method: 'POST',
+        body: JSON.stringify({ code: linkCode }),
+      });
+      setLinkCode('');
+      await onLinked();
+      onClose();
+    } catch (linkError) {
+      setPanelError(linkError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function copyText(text, successMessage) {
+    try {
+      await navigator.clipboard.writeText(text);
+      onMessage?.(successMessage);
+    } catch {
+      setPanelError('No se pudo copiar al portapapeles.');
+    }
+  }
+
+  const syncUrl = shareCode
+    ? `${window.location.origin}${window.location.pathname}?sync=${encodeURIComponent(shareCode)}`
+    : '';
+
+  return (
+    <div className="sync-overlay" role="presentation" onClick={onClose}>
+      <section
+        className="sync-panel panel"
+        role="dialog"
+        aria-labelledby="sync-panel-title"
+        aria-modal="true"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sync-panel-header">
+          <h2 id="sync-panel-title">Sincronizar dispositivos</h2>
+          <button type="button" className="icon-button sync-close" onClick={onClose} aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <p className="muted sync-intro">
+          Comparte un código para usar la misma lista en el móvil y el ordenador. Quien tenga el código puede ver y
+          editar tus seguimientos.
+        </p>
+        {panelError ? <p className="error banner">{panelError}</p> : null}
+
+        <div className="sync-section">
+          <h3>En este dispositivo</h3>
+          {shareCode ? (
+            <>
+              <p className="sync-code" aria-label="Código de sincronización">
+                {shareCode}
+              </p>
+              {shareExpiresAt ? (
+                <p className="muted">
+                  Válido hasta {new Date(shareExpiresAt).toLocaleDateString('es-ES')}
+                </p>
+              ) : null}
+              <div className="sync-actions">
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => copyText(shareCode, 'Código copiado.')}
+                >
+                  Copiar código
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => copyText(syncUrl, 'Enlace copiado.')}
+                >
+                  Copiar enlace
+                </button>
+              </div>
+              <button type="button" className="btn ghost block" disabled={loading} onClick={handleRevokeCode}>
+                Dejar de compartir
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn primary block" disabled={loading} onClick={handleGenerateCode}>
+              {loading ? 'Generando…' : 'Generar código'}
+            </button>
+          )}
+        </div>
+
+        <div className="sync-section">
+          <h3>Otro dispositivo</h3>
+          <label className="sync-link-field">
+            Código de sincronización
+            <input
+              type="text"
+              value={linkCode}
+              onChange={(event) => setLinkCode(event.target.value)}
+              placeholder="XXXX-XXXX"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn primary block"
+            disabled={loading || !linkCode.trim()}
+            onClick={handleLink}
+          >
+            {loading ? 'Vinculando…' : 'Vincular lista'}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState(VIEWS.HOME);
   const [watches, setWatches] = useState([]);
@@ -715,6 +879,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [pulling, setPulling] = useState(false);
   const [watchSort, setWatchSort] = useState(WATCH_SORT_OPTIONS.FAVORITES);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const loadWatches = useCallback(async () => {
     const payload = await api('/api/watches');
@@ -765,6 +930,41 @@ export default function App() {
     return () => {
       window.removeEventListener('touchstart', onTouchStart);
       window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [loadWatches]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const syncCode = params.get('sync');
+    if (!syncCode) {
+      return undefined;
+    }
+
+    let active = true;
+    (async () => {
+      try {
+        await api('/api/scope/link', {
+          method: 'POST',
+          body: JSON.stringify({ code: syncCode }),
+        });
+        if (!active) {
+          return;
+        }
+        await loadWatches();
+        setMessage('Lista sincronizada con otro dispositivo.');
+        params.delete('sync');
+        const query = params.toString();
+        const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+        window.history.replaceState({}, '', nextUrl);
+      } catch (syncError) {
+        if (active) {
+          setError(syncError.message);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
     };
   }, [loadWatches]);
 
@@ -861,10 +1061,25 @@ export default function App() {
           <h1>{headerCopy.title}</h1>
           <p className="subtitle">{headerCopy.subtitle}</p>
         </div>
-        <button type="button" className="notification-button" aria-label="Notificaciones">
-          <Icon name="bell" />
+        <button
+          type="button"
+          className="notification-button"
+          aria-label="Sincronizar dispositivos"
+          onClick={() => setSyncOpen(true)}
+        >
+          <Icon name="devices" />
         </button>
       </header>
+
+      <SyncPanel
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        onLinked={async () => {
+          await loadWatches();
+          setMessage('Lista sincronizada con otro dispositivo.');
+        }}
+        onMessage={setMessage}
+      />
 
       {pulling ? <p className="pull-hint">Actualizando…</p> : null}
       {message ? <p className="toast">{message}</p> : null}
