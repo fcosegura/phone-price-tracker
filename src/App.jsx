@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import BdPlannerApp from './bdplanner/BdPlannerApp.jsx';
-import { loadGifts } from './bdplanner/storage.js';
+import { exportBackup, normalizeGift, saveBirthDate, saveGifts } from './bdplanner/storage.js';
 import { isWatchInWishlist, persistGifts, toggleWishFromWatch } from './bdplanner/wishList.js';
 
 const VIEWS = {
@@ -799,8 +799,8 @@ function SyncPanel({ open, onClose, onLinked, onMessage }) {
           </button>
         </div>
         <p className="muted sync-intro">
-          Comparte un código para usar la misma lista en el móvil y el ordenador. Quien tenga el código puede ver y
-          editar tus seguimientos.
+          Comparte un código para usar la misma lista de seguimientos, deseos de cumpleaños y fecha en todos tus
+          dispositivos. Quien tenga el código puede ver y editar esos datos.
         </p>
         {panelError ? <p className="error banner">{panelError}</p> : null}
 
@@ -819,14 +819,7 @@ function SyncPanel({ open, onClose, onLinked, onMessage }) {
               <div className="sync-actions">
                 <button
                   type="button"
-                  className="btn secondary"
-                  onClick={() => copyText(shareCode, 'Código copiado.')}
-                >
-                  Copiar código
-                </button>
-                <button
-                  type="button"
-                  className="btn secondary"
+                  className="btn secondary block"
                   onClick={() => copyText(syncUrl, 'Enlace copiado.')}
                 >
                   Copiar enlace
@@ -873,7 +866,8 @@ function SyncPanel({ open, onClose, onLinked, onMessage }) {
 export default function App() {
   const [view, setView] = useState(VIEWS.HOME);
   const [watches, setWatches] = useState([]);
-  const [gifts, setGifts] = useState(() => loadGifts());
+  const [gifts, setGifts] = useState([]);
+  const [birthDate, setBirthDate] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -886,13 +880,55 @@ export default function App() {
     setWatches(payload.watches ?? []);
   }, []);
 
+  const applyPlannerState = useCallback((planner) => {
+    const nextBirthDate = planner.birthDate ?? '';
+    const nextGifts = (planner.gifts ?? []).map(normalizeGift);
+    setBirthDate(nextBirthDate);
+    setGifts(nextGifts);
+    saveBirthDate(nextBirthDate);
+    saveGifts(nextGifts);
+  }, []);
+
+  const savePlanner = useCallback(async (planner) => {
+    const payload = await api('/api/planner', {
+      method: 'PUT',
+      body: JSON.stringify(planner),
+    });
+    applyPlannerState(payload);
+    return payload;
+  }, [applyPlannerState]);
+
+  const loadPlanner = useCallback(async () => {
+    const payload = await api('/api/planner');
+    const serverEmpty = !payload.birthDate && !(payload.gifts?.length > 0);
+    if (serverEmpty) {
+      const local = exportBackup();
+      if (local.birthDate || (local.gifts?.length > 0)) {
+        const migrated = await api('/api/planner', {
+          method: 'PUT',
+          body: JSON.stringify({
+            birthDate: local.birthDate ?? '',
+            gifts: (local.gifts ?? []).map(normalizeGift),
+          }),
+        });
+        applyPlannerState(migrated);
+        return;
+      }
+    }
+    applyPlannerState(payload);
+  }, [applyPlannerState]);
+
+  const loadAll = useCallback(async () => {
+    await Promise.all([loadWatches(), loadPlanner()]);
+  }, [loadWatches, loadPlanner]);
+
   const sortedWatches = useMemo(() => sortWatches(watches, watchSort), [watches, watchSort]);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        await loadWatches();
+        await loadAll();
       } catch (loadError) {
         if (active) {
           setError(loadError.message);
@@ -902,7 +938,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [loadWatches]);
+  }, [loadAll]);
 
   useEffect(() => {
     let startY = 0;
@@ -915,7 +951,7 @@ export default function App() {
       if (startY && e.changedTouches[0].clientY - startY > 80 && window.scrollY <= 0) {
         setPulling(true);
         try {
-          await loadWatches();
+          await loadAll();
           setMessage('Lista actualizada');
         } catch (pullError) {
           setError(pullError.message);
@@ -931,7 +967,7 @@ export default function App() {
       window.removeEventListener('touchstart', onTouchStart);
       window.removeEventListener('touchend', onTouchEnd);
     };
-  }, [loadWatches]);
+  }, [loadAll]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -950,8 +986,8 @@ export default function App() {
         if (!active) {
           return;
         }
-        await loadWatches();
-        setMessage('Lista sincronizada con otro dispositivo.');
+        await loadAll();
+        setMessage('Lista y cumpleaños sincronizados con otro dispositivo.');
         params.delete('sync');
         const query = params.toString();
         const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
@@ -966,7 +1002,38 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [loadWatches]);
+  }, [loadAll]);
+
+  const handleGiftsChange = useCallback(
+    (nextGifts) => {
+      setGifts(nextGifts);
+      void savePlanner({ birthDate, gifts: nextGifts }).catch((saveError) => {
+        setError(saveError.message);
+      });
+    },
+    [birthDate, savePlanner],
+  );
+
+  const handleBirthDateChange = useCallback(
+    (value) => {
+      setBirthDate(value);
+      saveBirthDate(value);
+      void savePlanner({ birthDate: value, gifts }).catch((saveError) => {
+        setError(saveError.message);
+      });
+    },
+    [gifts, savePlanner],
+  );
+
+  const handlePlannerImported = useCallback(() => {
+    const local = exportBackup();
+    void savePlanner({
+      birthDate: local.birthDate ?? '',
+      gifts: (local.gifts ?? []).map(normalizeGift),
+    })
+      .then(() => setMessage('Datos de cumpleaños importados.'))
+      .catch((importError) => setError(importError.message));
+  }, [savePlanner]);
 
   async function handleAddWatch(item, searchQuery) {
     setError('');
@@ -1032,6 +1099,9 @@ export default function App() {
     const wasInList = isWatchInWishlist(gifts, watch);
     const next = persistGifts(toggleWishFromWatch(gifts, watch));
     setGifts(next);
+    void savePlanner({ birthDate, gifts: next }).catch((saveError) => {
+      setError(saveError.message);
+    });
     setMessage(wasInList ? 'Quitado de deseos de cumpleaños.' : 'Añadido a deseos de cumpleaños.');
   }
 
@@ -1075,8 +1145,8 @@ export default function App() {
         open={syncOpen}
         onClose={() => setSyncOpen(false)}
         onLinked={async () => {
-          await loadWatches();
-          setMessage('Lista sincronizada con otro dispositivo.');
+          await loadAll();
+          setMessage('Lista y cumpleaños sincronizados con otro dispositivo.');
         }}
         onMessage={setMessage}
       />
@@ -1143,7 +1213,10 @@ export default function App() {
           <BdPlannerApp
             watches={watches}
             gifts={gifts}
-            onGiftsChange={setGifts}
+            birthDate={birthDate}
+            onBirthDateChange={handleBirthDateChange}
+            onGiftsChange={handleGiftsChange}
+            onPlannerImported={handlePlannerImported}
             formatThumb={renderGiftThumb}
           />
         ) : null}

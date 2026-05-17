@@ -51,6 +51,8 @@ npm run dev        # terminal 2 — Vite en :5173 (proxy /api)
 | POST | `/api/scope/share` | Generar código de sincronización (30 días) |
 | DELETE | `/api/scope/share` | Revocar código activo |
 | POST | `/api/scope/link` | Vincular este navegador a otra lista (`{ "code": "XXXX-XXXX" }`) |
+| GET | `/api/planner` | Datos de cumpleaños (fecha y deseos) del scope actual |
+| PUT | `/api/planner` | Guardar cumpleaños (`{ "birthDate": "YYYY-MM-DD", "gifts": [...] }`) |
 
 La cookie `cex_tracker_scope` identifica tu lista en este navegador.
 
@@ -58,7 +60,9 @@ La cookie `cex_tracker_scope` identifica tu lista en este navegador.
 
 1. En el dispositivo con la lista: icono de dispositivos (cabecera) → **Generar código**.
 2. En el otro: **Vincular lista** con el mismo código, o abre el enlace copiado (`?sync=XXXX-XXXX`).
-3. Ambos comparten la misma lista e historial. Quien tenga el código puede ver y modificar los seguimientos.
+3. Ambos comparten seguimientos CeX, historial, deseos de cumpleaños y fecha de nacimiento. Quien tenga el código puede ver y modificar esos datos.
+
+Si ya tenías datos de cumpleaños solo en este navegador, se suben al servidor la primera vez que cargas la app tras actualizar.
 
 ## Despliegue en Cloudflare
 

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { loadBirthDate, saveBirthDate } from './storage.js';
 
 function computeCountdown(birthDate) {
   if (!birthDate) {
@@ -34,8 +33,7 @@ function computeCountdown(birthDate) {
   };
 }
 
-export function useBirthdayCountdown() {
-  const [birthDate, setBirthDateState] = useState(() => loadBirthDate());
+export function useBirthdayCountdown(birthDate) {
   const [tick, setTick] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- tick forces refresh each minute
   const countdown = useMemo(() => computeCountdown(birthDate), [birthDate, tick]);
@@ -48,11 +46,5 @@ export function useBirthdayCountdown() {
     return () => window.clearInterval(timer);
   }, [birthDate]);
 
-  function setBirthDate(value) {
-    saveBirthDate(value);
-    setBirthDateState(value);
-    setTick((value) => value + 1);
-  }
-
-  return { birthDate, setBirthDate, countdown };
+  return { countdown };
 }
