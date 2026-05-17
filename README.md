@@ -41,6 +41,7 @@ npm run dev        # terminal 2 — Vite en :5173 (proxy /api)
 |--------|------|-------------|
 | GET | `/api/health` | Estado |
 | GET | `/api/cex/search?q=` | Búsqueda CeX |
+| GET | `/api/cex/new-arrivals?days=` | Novedades en Málaga (1, 3 o 5 días): alta reciente en catálogo o stock reciente en tienda |
 | GET | `/api/cex/product?boxId=` | Detalle de un listado |
 | GET | `/api/watches` | Lista de seguimientos |
 | POST | `/api/watches` | Añadir seguimiento (`cexBoxId`, …) |

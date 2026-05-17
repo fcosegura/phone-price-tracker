@@ -186,26 +186,29 @@ export async function searchBoxes(
   return results;
 }
 
+export async function enrichBoxWithStoreStock(box, country = DEFAULT_COUNTRY) {
+  if (!box?.boxId) {
+    return box;
+  }
+  try {
+    const payload = await cexFetch(`/boxes/${box.boxId}/stock`, {}, country);
+    const stores = mapStoresFromDetail(payload).filter((s) => s.inStock);
+    return attachAvailabilitySummary(box, stores, {
+      ecomQuantity: box.stockQuantity,
+      inStockOnline: box.inStock ? 1 : 0,
+    });
+  } catch {
+    return box;
+  }
+}
+
 async function enrichInStockWithStoreStock(results, country) {
   const toEnrich = results.filter((box) => box.inStock).slice(0, 12);
   if (toEnrich.length === 0) {
     return results;
   }
 
-  const enriched = await Promise.all(
-    toEnrich.map(async (box) => {
-      try {
-        const payload = await cexFetch(`/boxes/${box.boxId}/stock`, {}, country);
-        const stores = mapStoresFromDetail(payload).filter((s) => s.inStock);
-        return attachAvailabilitySummary(box, stores, {
-          ecomQuantity: box.stockQuantity,
-          inStockOnline: box.inStock ? 1 : 0,
-        });
-      } catch {
-        return box;
-      }
-    }),
-  );
+  const enriched = await Promise.all(toEnrich.map((box) => enrichBoxWithStoreStock(box, country)));
 
   const byId = new Map(enriched.map((box) => [box.boxId, box]));
   return results.map((box) => byId.get(box.boxId) ?? box);
