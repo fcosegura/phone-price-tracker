@@ -1,5 +1,5 @@
 import { getBoxWithAvailability, searchBoxes } from './cex/client.js';
-import { fetchNewArrivalsMalaga } from './cex/newArrivals.js';
+import { fetchNewArrivalsMalagaCached, normalizeNewArrivalDays } from './cex/newArrivals.js';
 import { handleCexImageRequest } from './cex/imageProxy.js';
 import {
   createWatch,
@@ -131,9 +131,15 @@ async function handleApiRequest(request, env, url, scopeId) {
   }
 
   if (url.pathname === '/api/cex/new-arrivals' && request.method === 'GET') {
-    const days = url.searchParams.get('days') ?? '3';
-    const arrivals = await fetchNewArrivalsMalaga({ days, country });
-    return jsonResponse(arrivals);
+    const days = normalizeNewArrivalDays(url.searchParams.get('days') ?? '3');
+    const arrivals = await fetchNewArrivalsMalagaCached({
+      days,
+      country,
+      cache: caches.default,
+    });
+    return jsonResponse(arrivals, 200, {
+      'cache-control': arrivals.meta?.cached ? 'public, max-age=600' : 'public, max-age=60',
+    });
   }
 
   if (url.pathname === '/api/cex/image' && request.method === 'GET') {
