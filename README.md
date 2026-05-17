@@ -48,8 +48,17 @@ npm run dev        # terminal 2 — Vite en :5173 (proxy /api)
 | GET | `/api/watches/:id/history` | Historial precio y tiendas |
 | POST | `/api/watches/:id/refresh` | Refresco manual |
 | PATCH | `/api/watches/:id/favorite` | Marcar o desmarcar favorito |
+| POST | `/api/scope/share` | Generar código de sincronización (30 días) |
+| DELETE | `/api/scope/share` | Revocar código activo |
+| POST | `/api/scope/link` | Vincular este navegador a otra lista (`{ "code": "XXXX-XXXX" }`) |
 
 La cookie `cex_tracker_scope` identifica tu lista en este navegador.
+
+### Sincronizar entre dispositivos
+
+1. En el dispositivo con la lista: icono de dispositivos (cabecera) → **Generar código**.
+2. En el otro: **Vincular lista** con el mismo código, o abre el enlace copiado (`?sync=XXXX-XXXX`).
+3. Ambos comparten la misma lista e historial. Quien tenga el código puede ver y modificar los seguimientos.
 
 ## Despliegue en Cloudflare
 

@@ -9,6 +9,7 @@ import {
   refreshWatch,
   updateWatchFavorite,
 } from './api/watches.js';
+import { createSyncToken, linkScopeByCode, revokeSyncTokens } from './api/scope.js';
 import { ensureSchema } from './db/schema.js';
 
 const JSON_HEADERS = {
@@ -60,16 +61,23 @@ function getScopeId(request) {
   return crypto.randomUUID();
 }
 
+function buildScopeCookie(scopeId, request) {
+  const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
+  return `${SCOPE_COOKIE}=${encodeURIComponent(scopeId)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+}
+
 function withScopeCookie(response, scopeId, request) {
   const headers = new Headers(response.headers);
   const cookie = request.headers.get('cookie') ?? '';
   if (!cookie.includes(`${SCOPE_COOKIE}=`)) {
-    const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
-    headers.append(
-      'set-cookie',
-      `${SCOPE_COOKIE}=${encodeURIComponent(scopeId)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`,
-    );
+    headers.append('set-cookie', buildScopeCookie(scopeId, request));
   }
+  return new Response(response.body, { status: response.status, headers });
+}
+
+function setScopeCookie(response, scopeId, request) {
+  const headers = new Headers(response.headers);
+  headers.set('set-cookie', buildScopeCookie(scopeId, request));
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -131,6 +139,30 @@ async function handleApiRequest(request, env, url, scopeId) {
     }
     const product = await getBoxWithAvailability(boxId, country);
     return jsonResponse({ product });
+  }
+
+  if (url.pathname === '/api/scope/share' && request.method === 'POST') {
+    const token = await createSyncToken(env, scopeId);
+    return jsonResponse(token);
+  }
+
+  if (url.pathname === '/api/scope/share' && request.method === 'DELETE') {
+    await revokeSyncTokens(env, scopeId);
+    return jsonResponse({ revoked: true });
+  }
+
+  if (url.pathname === '/api/scope/link' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    const code = body.code ?? body.syncCode ?? '';
+    const linkedScopeId = await linkScopeByCode(env, code);
+    if (!linkedScopeId) {
+      return jsonResponse({ error: 'Código inválido o expirado.' }, 404);
+    }
+    return {
+      response: jsonResponse({ linked: true }),
+      scopeId: linkedScopeId,
+      forceCookie: true,
+    };
   }
 
   if (url.pathname === '/api/watches' && request.method === 'GET') {
@@ -201,8 +233,14 @@ export default {
       const scopeId = getScopeId(request);
 
       if (url.pathname.startsWith('/api/')) {
-        const apiResponse = await handleApiRequest(request, env, url, scopeId);
-        return applySecurityHeaders(withScopeCookie(apiResponse, scopeId, request));
+        const apiResult = await handleApiRequest(request, env, url, scopeId);
+        const forceCookie = Boolean(apiResult?.forceCookie);
+        const apiResponse = forceCookie ? apiResult.response : apiResult;
+        const cookieScopeId = forceCookie ? apiResult.scopeId : scopeId;
+        const scopedResponse = forceCookie
+          ? setScopeCookie(apiResponse, cookieScopeId, request)
+          : withScopeCookie(apiResponse, cookieScopeId, request);
+        return applySecurityHeaders(scopedResponse);
       }
 
       const assetResponse = await env.ASSETS.fetch(request);
