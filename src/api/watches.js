@@ -272,7 +272,8 @@ async function getLatestAvailabilityFingerprint(env, deviceId) {
   );
 }
 
-export async function recordSnapshots(env, deviceId, live) {
+export async function recordSnapshots(env, deviceId, live, options = {}) {
+  const { forcePriceSnapshot = false } = options;
   const now = new Date().toISOString();
   const latest = await getLatestPriceSnapshot(env, deviceId);
   const sellPrice = live.sellPrice ?? null;
@@ -283,7 +284,7 @@ export async function recordSnapshots(env, deviceId, live) {
     latest.sell_price !== sellPrice ||
     latest.cash_price !== cashPrice;
 
-  if (priceChanged) {
+  if (priceChanged || forcePriceSnapshot) {
     await env.DB.prepare(
       `INSERT INTO price_snapshots (id, device_id, sell_price, cash_price, currency, recorded_at)
        VALUES (?1, ?2, ?3, ?4, 'EUR', ?5)`,
@@ -334,7 +335,7 @@ export async function refreshWatch(env, scopeId, deviceId, country) {
     return null;
   }
   const live = await getBoxWithAvailability(watch.cexBoxId, country);
-  await recordSnapshots(env, deviceId, live);
+  await recordSnapshots(env, deviceId, live, { forcePriceSnapshot: true });
   await persistWatchImage(env, deviceId, live.imageUrl);
   const updated = await getWatch(env, scopeId, deviceId);
   return {
