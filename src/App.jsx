@@ -819,14 +819,7 @@ function SyncPanel({ open, onClose, onLinked, onMessage }) {
               <div className="sync-actions">
                 <button
                   type="button"
-                  className="btn secondary"
-                  onClick={() => copyText(shareCode, 'Código copiado.')}
-                >
-                  Copiar código
-                </button>
-                <button
-                  type="button"
-                  className="btn secondary"
+                  className="btn secondary block"
                   onClick={() => copyText(syncUrl, 'Enlace copiado.')}
                 >
                   Copiar enlace
